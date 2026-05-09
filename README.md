@@ -4,6 +4,18 @@ This workspace contains a first-pass IMS audit for a biologics safety problem:
 
 When a patient is scheduled to receive Xolair, Fasenra, or Tezspire, flag cases where the patient's current primary insurance appears to have changed after the most recent drug dispense charge. Those patients need PA/no-PA verification before administration.
 
+## Project Manifest
+
+See [`project_manifest.yaml`](project_manifest.yaml) for the handoff map.
+
+- Role: IMS biologic PA-risk audit and optional IMS reminder creation for recent primary-insurance changes.
+- Authoring/source of truth: GitHub `main`; current checkout `C:\Users\safadig\Documents\GitHub\IMS-Biologics_Authorization`.
+- Runtime: `ims-referrals` / `192.168.137.164` using `/opt/sqlanywhere17/bin64/dbisql`.
+- Database/external systems: IMS SQL Anywhere, IMS reminders (`todo` / `tobe_done_detail`), and Biologics group `14`.
+- Main services: PowerShell dry-run/apply scripts plus optional Linux runner under `/opt/ims_router`.
+- Deploy command: copy changed runtime runner/templates to `/opt/ims_router` when the scheduled workflow changes.
+- Health checks: run the alert report, run reminder dry-run, and verify duplicate suppression before `-Apply`.
+
 ## What I Found
 
 - The local Windows ODBC DSN `meditab2` is not configured on this desktop.

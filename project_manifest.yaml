@@ -1,0 +1,99 @@
+project:
+  name: IMS Biologics Authorization Guard
+  role: >
+    IMS SQL Anywhere audit and reminder workflow for Xolair, Fasenra, and
+    Tezspire patients whose current primary insurance appears to have changed
+    after the most recent biologic dispense.
+
+handoff:
+  read_first:
+    - project_manifest.yaml
+    - CLAUDE.md
+    - memory.md
+    - AGENTS.md
+    - README.md
+    - docs/implementation-notes.md
+  keep_updated_when_changed:
+    - paths
+    - services
+    - tables
+    - scripts
+    - workflows
+
+authoring:
+  current_checkout: "C:\\Users\\safadig\\Documents\\GitHub\\IMS-Biologics_Authorization"
+  source_of_truth: GitHub repository on the main branch
+
+runtime:
+  primary_host_alias: ims-referrals
+  primary_host_ip: 192.168.137.164
+  sql_anywhere_client: /opt/sqlanywhere17/bin64/dbisql
+  runtime_env: IMS_DB_USER, IMS_DB_PASSWORD, IMS_DB_ENGINE, IMS_DB_NAME, IMS_DB_HOST, IMS_DB_PORT
+  reports_path: reports/
+  linux_runner: /opt/ims_router/run-biologic-insurance-change-reminders.sh when installed
+  python_venv: Not required for the SQL/PowerShell workflow
+
+database_or_external_systems:
+  ims_sql_anywhere:
+    access: dbisql through the ims-referrals runtime
+    local_windows_dsn_note: Local Windows ODBC DSN meditab2 is not configured on this desktop
+  ims_tasks:
+    reminder_group: Biologics
+    todo_group_id: 14
+    source_marker: BIO_INS_CHANGE_PA
+
+main_tables_files_services:
+  ims_tables:
+    - schedule_detail
+    - billing_detail
+    - billing_header
+    - billing_master
+    - patient_insurance
+    - patient_master
+    - todo
+    - tobe_done_detail
+    - todo_group
+    - todo_category
+  key_files:
+    - sql/biologic_insurance_change_alerts.sql
+    - sql/biologic_insurance_change_reminder_candidates.sql
+    - sql/create_biologic_insurance_change_reminders.sql
+    - scripts/run-biologic-insurance-alerts.ps1
+    - scripts/run-biologic-insurance-change-reminders.ps1
+    - scripts/run-biologic-insurance-change-reminders-linux.sh
+    - docs/implementation-notes.md
+
+key_scripts_commands:
+  alert_report:
+    - ".\\scripts\\run-biologic-insurance-alerts.ps1"
+  reminder_dry_run:
+    - ".\\scripts\\run-biologic-insurance-change-reminders.ps1"
+  create_reminders:
+    - ".\\scripts\\run-biologic-insurance-change-reminders.ps1 -Apply"
+  linux_runner:
+    - /opt/ims_router/run-biologic-insurance-change-reminders.sh
+
+important_project_rules:
+  - Read project_manifest.yaml, CLAUDE.md, memory.md, and AGENTS.md if present before making changes.
+  - Keep project_manifest.yaml updated when paths, services, tables, scripts, or workflows change.
+  - Dry-run and review candidate CSVs before applying reminder inserts.
+  - Do not rely on the stale z_biologic_schedule_14d table for live appointment detection.
+  - Do not treat patient_insurance.changed_date alone as proof of a true insurance change.
+  - Keep generated reports out of Git because they may contain patient-level details.
+  - Insert both todo and tobe_done_detail for IMS reminders; My Tasks does not read todo alone.
+
+health_checks:
+  repository:
+    - git status --short --branch
+    - git diff --check
+  workflow:
+    - Run the alert report and confirm the CSV is generated.
+    - Run the reminder dry-run and confirm candidate rows look plausible.
+    - For apply changes, verify OPEN_BIO_INS_CHANGE_PA_REMINDERS output and duplicate suppression.
+
+deployment_workflow:
+  - Edit SQL and scripts in the repo.
+  - Run dry-run reports through the ims-referrals host.
+  - If the Linux cron/runner copy changes, deploy the updated runner/template to /opt/ims_router on ims-referrals.
+  - Re-run dry-run checks after deployment.
+  - Commit and push reviewed documentation/script changes.
