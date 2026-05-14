@@ -9,7 +9,7 @@ When a patient is scheduled to receive Xolair, Fasenra, or Tezspire, flag cases 
 See [`project_manifest.yaml`](project_manifest.yaml) for the handoff map.
 
 - Role: IMS biologic PA-risk audit and optional IMS reminder creation for recent primary-insurance changes.
-- Authoring/source of truth: GitHub `main`; current checkout `C:\Users\safadig\Documents\GitHub\IMS-Biologics_Authorization`.
+- Authoring/source of truth: GitHub `main`; current checkout `C:\Users\safadig\Documents\GitHub\Practice-IMS\IMS-Biologics_Authorization`.
 - Runtime: `ims-referrals` / `192.168.137.164` using `/opt/sqlanywhere17/bin64/dbisql`.
 - Database/external systems: IMS SQL Anywhere, IMS reminders (`todo` / `tobe_done_detail`), and Biologics group `14`.
 - Main services: PowerShell dry-run/apply scripts plus optional Linux runner under `/opt/ims_router`.

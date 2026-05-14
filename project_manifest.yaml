@@ -21,7 +21,7 @@ handoff:
     - workflows
 
 authoring:
-  current_checkout: "C:\\Users\\safadig\\Documents\\GitHub\\IMS-Biologics_Authorization"
+  current_checkout: "C:\\Users\\safadig\\Documents\\GitHub\\Practice-IMS\\IMS-Biologics_Authorization"
   source_of_truth: GitHub repository on the main branch
 
 runtime:
