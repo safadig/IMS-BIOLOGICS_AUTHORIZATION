@@ -86,4 +86,6 @@ The task heading is fixed text: `ALERT! Check auth/referral before buy-and-bill 
 
 When the Linux apply runner inserts one or more new reminders, it sends a non-PHI staff alert through the MedStaff SMS gateway to Tara, Lisa, and Cindy. The alert tells them to check IMS Biologics reminders for PA/referral status before the next buy-and-bill dose. Keep patient identifiers out of SMS.
 
+The runner also sends a separate non-PHI SMS to the IMS user who made the insurance change when that user can be resolved from IMS `edit_log_header` or `audit_trail` rows near the insurance-change timestamp. If IMS does not write an audit row for the insurance screen action, the runner logs that the user-specific alert was skipped instead of guessing from unrelated reminders.
+
 IMS task lists do not read `todo` alone. The My Tasks reminder screen joins `todo` to `tobe_done_detail`, so automation-created reminders must insert both rows. The child detail row should use `task_status = 'P'` and a `show_date` on or before the current date; the current script uses seven days before the due date, matching nearby IMS-created reminders.

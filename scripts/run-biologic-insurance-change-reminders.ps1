@@ -36,6 +36,7 @@ if ($Apply) {
 $sql = Get-Content -LiteralPath $templatePath -Raw
 $sql = $sql.Replace("__DISPENSE_LOOKBACK_DAYS__", [string]$DispenseLookbackDays)
 $sql = $sql.Replace("__CHANGE_LOOKBACK_DAYS__", [string]$ChangeLookbackDays)
+$sql = $sql.Replace("__RUN_STARTED_TS__", (Get-Date).ToString("yyyy-MM-dd HH:mm:ss"))
 $sql = $sql.Replace("__APPLY_EXTRA_WHERE__", "")
 Set-Content -LiteralPath $localPrepared -Value $sql -NoNewline
 
@@ -80,4 +81,3 @@ rm -f "$remoteSql" "$remoteWrappedSql"
 } finally {
     Remove-Item -LiteralPath $localPrepared -ErrorAction SilentlyContinue
 }
-

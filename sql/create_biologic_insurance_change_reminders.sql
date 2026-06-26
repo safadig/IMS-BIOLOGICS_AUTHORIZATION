@@ -256,3 +256,139 @@ SELECT 'OPEN_BIO_INS_CHANGE_PA_REMINDERS|' || CAST(COUNT(*) AS VARCHAR(20))
 FROM todo
 WHERE status = 'G'
   AND source = 'BIO_INS_CHANGE_PA';
+
+WITH new_auto_reminders AS (
+    SELECT
+        t.tran_id AS todo_id,
+        t.forwhom_id AS patient_id
+    FROM todo t
+    WHERE t.status = 'G'
+      AND t.source = 'BIO_INS_CHANGE_PA'
+      AND t.created_date >= CAST('__RUN_STARTED_TS__' AS TIMESTAMP)
+),
+recent_primary_change AS (
+    SELECT *
+    FROM (
+        SELECT
+            pi.patient_id,
+            pi.sr_id AS insurance_sr_id,
+            pi.insurance_no,
+            pi.membership_id,
+            pi.group_no,
+            pi.start_date,
+            pi.created_date,
+            pi.changed_date,
+            COALESCE(pi.changed_date, pi.created_date) AS insurance_change_ts,
+            ROW_NUMBER() OVER (
+                PARTITION BY pi.patient_id
+                ORDER BY COALESCE(pi.changed_date, pi.created_date, pi.start_date) DESC, pi.sr_id DESC
+            ) AS rn
+        FROM patient_insurance pi
+        JOIN new_auto_reminders nar
+          ON nar.patient_id = pi.patient_id
+        WHERE pi.priority = 'P'
+          AND COALESCE(pi.changed_date, pi.created_date) >= DATEADD(day, -__CHANGE_LOOKBACK_DAYS__, CURRENT TIMESTAMP)
+    ) x
+    WHERE rn = 1
+),
+insurance_audit_user AS (
+    SELECT *
+    FROM (
+        SELECT
+            rpc.patient_id,
+            rpc.insurance_sr_id,
+            au.audit_user,
+            au.audit_ts,
+            ROW_NUMBER() OVER (
+                PARTITION BY rpc.patient_id, rpc.insurance_sr_id
+                ORDER BY au.audit_ts DESC
+            ) AS rn
+        FROM recent_primary_change rpc
+        JOIN (
+            SELECT
+                rpc2.patient_id,
+                rpc2.insurance_sr_id,
+                h.modified_by AS audit_user,
+                h.modified_date AS audit_ts
+            FROM recent_primary_change rpc2
+            JOIN edit_log_header h
+              ON h.modified_date BETWEEN DATEADD(minute, -10, rpc2.insurance_change_ts)
+                                     AND DATEADD(minute, 10, rpc2.insurance_change_ts)
+             AND COALESCE(h.modified_by, '') NOT IN ('', 'system', 'SYSTEM', 'dba', 'DBA')
+             AND (
+                    h.PK_1 = CAST(rpc2.patient_id AS VARCHAR(50))
+                 OR h.PK_2 = CAST(rpc2.patient_id AS VARCHAR(50))
+                 OR h.pk_3 = CAST(rpc2.patient_id AS VARCHAR(50))
+                 OR h.PK_1 = CAST(rpc2.insurance_sr_id AS VARCHAR(50))
+                 OR h.PK_2 = CAST(rpc2.insurance_sr_id AS VARCHAR(50))
+                 OR h.pk_3 = CAST(rpc2.insurance_sr_id AS VARCHAR(50))
+                 OR (
+                        COALESCE(rpc2.membership_id, '') <> ''
+                    AND (
+                           CAST(h.old_values AS VARCHAR(32767)) LIKE '%' || rpc2.membership_id || '%'
+                        OR CAST(h.new_values AS VARCHAR(32767)) LIKE '%' || rpc2.membership_id || '%'
+                        OR CAST(h.column_detail AS VARCHAR(32767)) LIKE '%' || rpc2.membership_id || '%'
+                    )
+                 )
+                 OR (
+                        COALESCE(rpc2.insurance_no, '') <> ''
+                    AND (
+                           CAST(h.old_values AS VARCHAR(32767)) LIKE '%' || rpc2.insurance_no || '%'
+                        OR CAST(h.new_values AS VARCHAR(32767)) LIKE '%' || rpc2.insurance_no || '%'
+                        OR CAST(h.column_detail AS VARCHAR(32767)) LIKE '%' || rpc2.insurance_no || '%'
+                    )
+                 )
+             )
+
+            UNION ALL
+
+            SELECT
+                rpc2.patient_id,
+                rpc2.insurance_sr_id,
+                a.user_name AS audit_user,
+                a.tran_date AS audit_ts
+            FROM recent_primary_change rpc2
+            JOIN audit_trail a
+              ON a.tran_date BETWEEN DATEADD(minute, -10, rpc2.insurance_change_ts)
+                                 AND DATEADD(minute, 10, rpc2.insurance_change_ts)
+             AND COALESCE(a.user_name, '') NOT IN ('', 'system', 'SYSTEM', 'dba', 'DBA')
+             AND (
+                    CAST(a.sql_syntax AS VARCHAR(2000)) LIKE '%patient_insurance%'
+                 OR CAST(a.sql_syntax AS VARCHAR(2000)) LIKE '%' || CAST(rpc2.patient_id AS VARCHAR(50)) || '%'
+                 OR (
+                        COALESCE(rpc2.membership_id, '') <> ''
+                    AND CAST(a.sql_syntax AS VARCHAR(2000)) LIKE '%' || rpc2.membership_id || '%'
+                 )
+                 OR (
+                        COALESCE(rpc2.insurance_no, '') <> ''
+                    AND CAST(a.sql_syntax AS VARCHAR(2000)) LIKE '%' || rpc2.insurance_no || '%'
+                 )
+             )
+        ) au
+          ON au.patient_id = rpc.patient_id
+         AND au.insurance_sr_id = rpc.insurance_sr_id
+    ) x
+    WHERE rn = 1
+),
+resolved_audit_user AS (
+    SELECT
+        iau.patient_id,
+        iau.insurance_sr_id,
+        iau.audit_user,
+        CASE
+            WHEN em.empid IS NOT NULL
+             AND COALESCE(em.firstname, '') || COALESCE(em.lastname, '') <> ''
+                THEN COALESCE(em.firstname, '') || ' ' || COALESCE(em.lastname, '')
+            ELSE iau.audit_user
+        END AS employee_name
+    FROM insurance_audit_user iau
+    LEFT JOIN emp_master em
+      ON LOWER(COALESCE(em.user_name, '')) = LOWER(iau.audit_user)
+      OR LOWER(COALESCE(em.firstname, '') || ' ' || COALESCE(em.lastname, '')) = LOWER(iau.audit_user)
+)
+SELECT DISTINCT
+    'BIO_INS_CHANGE_USER_ALERT|' ||
+    COALESCE(employee_name, '') || '|' ||
+    COALESCE(audit_user, '')
+FROM resolved_audit_user
+WHERE COALESCE(employee_name, '') <> '';
