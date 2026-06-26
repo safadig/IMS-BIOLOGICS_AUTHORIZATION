@@ -82,6 +82,8 @@ Tezspire -> category_id 123 -> group_id 14 Biologics
 
 The insert uses `todo_by_multi_group = ',14,'` and `tobe_doneby = 'Biologics '`, matching IMS's group-assignment pattern for reminders. It also marks rows with `source = 'BIO_INS_CHANGE_PA'` so later runs can avoid duplicates and reports can find automation-created reminders.
 
-The task heading is fixed text: `ALERT! Biologic Dispensed and Insurance changed`. The patient/drug/plan detail belongs in `todo.note`. Leave `tobe_done_detail.note` empty so the My Tasks `Status Note` column stays blank.
+The task heading is fixed text: `ALERT! Check auth/referral before buy-and-bill biologic`. The patient/drug/plan detail belongs in `todo.note`, starting with `CHECK AUTH / REFERRAL STATUS BEFORE NEXT BUY-AND-BILL BIOLOGIC`. Leave `tobe_done_detail.note` empty so the My Tasks `Status Note` column stays blank.
+
+When the Linux apply runner inserts one or more new reminders, it sends a non-PHI staff alert through the MedStaff SMS gateway to Tara, Lisa, and Cindy. The alert tells them to check IMS Biologics reminders for PA/referral status before the next buy-and-bill dose. Keep patient identifiers out of SMS.
 
 IMS task lists do not read `todo` alone. The My Tasks reminder screen joins `todo` to `tobe_done_detail`, so automation-created reminders must insert both rows. The child detail row should use `task_status = 'P'` and a `show_date` on or before the current date; the current script uses seven days before the due date, matching nearby IMS-created reminders.

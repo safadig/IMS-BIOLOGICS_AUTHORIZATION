@@ -83,10 +83,11 @@ Defaults:
 - insurance-change lookback: `3` days
 - reminder group: `Biologics`, `todo_group.group_id = 14`
 - reminder source marker: `BIO_INS_CHANGE_PA`
-- task heading: `ALERT! Biologic Dispensed and Insurance changed`
+- task heading: `ALERT! Check auth/referral before buy-and-bill biologic`
 - patient-specific detail: stored in the reminder note
 - duplicate rule: one open automation reminder per patient, based on the most recent biologic dispense
 - insurance-change rule: the current primary insurance must have started or been created after the biologic dispense; a plain `changed_date` edit is not enough
+- staff alert: when the Linux apply runner inserts one or more new reminders, it posts a non-PHI staff alert through the MedStaff SMS gateway to Tara, Lisa, and Cindy so they check IMS Biologics reminders for PA/referral status
 
 ## Validation On 2026-05-08
 

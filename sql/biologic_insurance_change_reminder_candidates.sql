@@ -171,8 +171,9 @@ candidates AS (
         cp.current_membership_id,
         cp.current_group_no,
         cp.current_group_name,
-        'Insurance changed after recent ' || ld.biologic_drug ||
-            ' dispense - verify PA/no-PA before administration. Last dispense ' ||
+        'CHECK AUTH / REFERRAL STATUS BEFORE NEXT BUY-AND-BILL BIOLOGIC. ' ||
+            'Insurance changed after recent ' || ld.biologic_drug ||
+            ' dispense. Verify PA/no-PA and referral status before administration. Last dispense ' ||
             COALESCE(CAST(ld.dispense_date AS VARCHAR(30)), '') || ' ' ||
             COALESCE(ld.dispense_code, '') || '. Current primary: ' ||
             COALESCE(ipm_current.name, '(none)') || ', member ' ||
