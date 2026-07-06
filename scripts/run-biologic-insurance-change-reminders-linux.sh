@@ -6,6 +6,11 @@ if [[ "${BIOLOGIC_INS_CHANGE_REMINDER_LOCK_HELD:-0}" != "1" ]]; then
   exec /usr/bin/flock -n "$LOCK_FILE" env BIOLOGIC_INS_CHANGE_REMINDER_LOCK_HELD=1 "$0" "$@"
 fi
 
+set -a
+. /opt/ims_router/.env
+set +a
+. /opt/sqlanywhere17/bin64/sa_config.sh
+
 DISPENSE_LOOKBACK_DAYS="${BIOLOGIC_INS_CHANGE_DISPENSE_LOOKBACK_DAYS:-45}"
 CHANGE_LOOKBACK_DAYS="${BIOLOGIC_INS_CHANGE_LOOKBACK_DAYS:-3}"
 RUN_STARTED_TS="$(date '+%Y-%m-%d %H:%M:%S')"
@@ -21,11 +26,6 @@ SMS_ALERT_MESSAGE="${BIO_INS_CHANGE_SMS_ALERT_MESSAGE:-New biologic insurance/au
 SMS_USER_ALERT_MESSAGE="${BIO_INS_CHANGE_SMS_USER_ALERT_MESSAGE:-You changed insurance for a patient receiving a buy-and-bill biologic. It is essential that you notify Tara that the change occurred so new prior authorization can be obtained. Check IMS Biologics reminders now.}"
 
 mkdir -p /opt/ims_router/logs /opt/ims_router/output
-
-set -a
-. /opt/ims_router/.env
-set +a
-. /opt/sqlanywhere17/bin64/sa_config.sh
 
 conn="UID=${IMS_DB_USER};PWD=${IMS_DB_PASSWORD};ENG=${IMS_DB_ENGINE};DBN=${IMS_DB_NAME};LINKS=tcpip(host=${IMS_DB_HOST}:${IMS_DB_PORT});"
 
@@ -104,6 +104,13 @@ def post_notice(employees, message, marker_prefix, label):
         sys.exit(1)
     except Exception as exc:
         print(f"{label} failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        payload = {}
+    if payload.get("ok") is False:
+        print(f"{label} failed gateway response: {body}", file=sys.stderr)
         sys.exit(1)
     print(f"{label} queued: {body}")
 
