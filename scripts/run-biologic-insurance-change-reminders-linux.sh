@@ -76,6 +76,29 @@ def split_employees(value):
     return [item.strip() for item in value.replace("|", ";").split(";") if item.strip()]
 
 
+def append_unique(values, value):
+    clean = " ".join((value or "").strip().split())
+    if clean and clean.casefold() not in {item.casefold() for item in values}:
+        values.append(clean)
+
+
+def prefixed_parts(text, prefix):
+    if prefix not in text:
+        return None
+    return text[text.index(prefix) :].split("|")
+
+
+def patient_no_text(patient_numbers):
+    if not patient_numbers:
+        return ""
+    shown = patient_numbers[:8]
+    text = ", ".join(shown)
+    remaining = len(patient_numbers) - len(shown)
+    if remaining > 0:
+        text = f"{text} +{remaining} more"
+    return text
+
+
 def post_notice(employees, message, marker_prefix, label):
     if not employees:
         print(f"{label} skipped: no employees")
@@ -116,12 +139,45 @@ def post_notice(employees, message, marker_prefix, label):
 
 
 count = int(os.environ.get("BIO_INS_CHANGE_INSERTED_COUNT", "0") or "0")
-ops_message = os.environ["BIO_INS_CHANGE_SMS_ALERT_MESSAGE"].strip()
-if count > 1:
+user_alerts = {}
+patient_numbers = []
+output_path = os.environ.get("BIO_INS_CHANGE_OUTPUT_FILE", "")
+if output_path and os.path.exists(output_path):
+    with open(output_path, "r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            text = line.strip()
+            patient_parts = prefixed_parts(text, "BIO_INS_CHANGE_PATIENT_ALERT|")
+            if patient_parts and len(patient_parts) >= 2:
+                append_unique(patient_numbers, patient_parts[1])
+                continue
+
+            user_parts = prefixed_parts(text, "BIO_INS_CHANGE_USER_ALERT|")
+            if user_parts and len(user_parts) >= 2:
+                employee = user_parts[1].strip()
+                patient_no = user_parts[3].strip() if len(user_parts) >= 4 else ""
+                if employee:
+                    user_alerts.setdefault(employee, [])
+                    append_unique(user_alerts[employee], patient_no)
+
+patient_text = patient_no_text(patient_numbers)
+if patient_text:
+    if count > 1:
+        ops_message = (
+            f"{count} new biologic insurance/auth alerts created in IMS for patient_no {patient_text}. "
+            "Check Biologics reminders now for PA/referral status before next buy-and-bill dose."
+        )
+    else:
+        ops_message = (
+            f"New biologic insurance/auth alert created in IMS for patient_no {patient_text}. "
+            "Check Biologics reminders now for PA/referral status before next buy-and-bill dose."
+        )
+elif count > 1:
     ops_message = (
         f"{count} new biologic insurance/auth alerts created in IMS. "
         "Check Biologics reminders now for PA/referral status before next buy-and-bill dose."
     )
+else:
+    ops_message = os.environ["BIO_INS_CHANGE_SMS_ALERT_MESSAGE"].strip()
 post_notice(
     split_employees(os.environ.get("BIO_INS_CHANGE_SMS_ALERT_EMPLOYEES", "")),
     ops_message,
@@ -129,28 +185,23 @@ post_notice(
     "BIO_INS_CHANGE_SMS_ALERT",
 )
 
-user_employees = []
-output_path = os.environ.get("BIO_INS_CHANGE_OUTPUT_FILE", "")
-if output_path and os.path.exists(output_path):
-    with open(output_path, "r", encoding="utf-8", errors="ignore") as handle:
-        for line in handle:
-            text = line.strip()
-            if not text.startswith("BIO_INS_CHANGE_USER_ALERT|"):
-                continue
-            parts = text.split("|")
-            if len(parts) < 2:
-                continue
-            employee = parts[1].strip()
-            if employee and employee.casefold() not in {item.casefold() for item in user_employees}:
-                user_employees.append(employee)
-
-if user_employees:
-    post_notice(
-        user_employees,
-        os.environ["BIO_INS_CHANGE_SMS_USER_ALERT_MESSAGE"].strip(),
-        f"{marker_base}:user",
-        "BIO_INS_CHANGE_USER_SMS_ALERT",
-    )
+if user_alerts:
+    for employee, employee_patient_numbers in sorted(user_alerts.items()):
+        employee_patient_text = patient_no_text(employee_patient_numbers)
+        if employee_patient_text:
+            user_message = (
+                f"You changed insurance for patient_no {employee_patient_text}, who receives a buy-and-bill biologic. "
+                "It is essential that you notify Tara that the change occurred so new prior authorization can be obtained. "
+                "Check IMS Biologics reminders now."
+            )
+        else:
+            user_message = os.environ["BIO_INS_CHANGE_SMS_USER_ALERT_MESSAGE"].strip()
+        post_notice(
+            [employee],
+            user_message,
+            f"{marker_base}:user",
+            "BIO_INS_CHANGE_USER_SMS_ALERT",
+        )
 else:
     print("BIO_INS_CHANGE_USER_SMS_ALERT skipped: IMS audit user unavailable for new reminder(s)")
 PY

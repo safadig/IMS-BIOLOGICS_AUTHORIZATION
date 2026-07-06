@@ -265,6 +265,23 @@ WITH new_auto_reminders AS (
     WHERE t.status = 'G'
       AND t.source = 'BIO_INS_CHANGE_PA'
       AND t.created_date >= CAST('__RUN_STARTED_TS__' AS TIMESTAMP)
+)
+SELECT DISTINCT
+    'BIO_INS_CHANGE_PATIENT_ALERT|' ||
+    COALESCE(CAST(pm.patient_no AS VARCHAR(50)), '')
+FROM new_auto_reminders nar
+JOIN patient_master pm
+  ON pm.id = nar.patient_id
+WHERE COALESCE(CAST(pm.patient_no AS VARCHAR(50)), '') <> '';
+
+WITH new_auto_reminders AS (
+    SELECT
+        t.tran_id AS todo_id,
+        t.forwhom_id AS patient_id
+    FROM todo t
+    WHERE t.status = 'G'
+      AND t.source = 'BIO_INS_CHANGE_PA'
+      AND t.created_date >= CAST('__RUN_STARTED_TS__' AS TIMESTAMP)
 ),
 recent_primary_change AS (
     SELECT *
@@ -389,6 +406,9 @@ resolved_audit_user AS (
 SELECT DISTINCT
     'BIO_INS_CHANGE_USER_ALERT|' ||
     COALESCE(employee_name, '') || '|' ||
-    COALESCE(audit_user, '')
-FROM resolved_audit_user
+    COALESCE(audit_user, '') || '|' ||
+    COALESCE(CAST(pm.patient_no AS VARCHAR(50)), '')
+FROM resolved_audit_user rau
+LEFT JOIN patient_master pm
+  ON pm.id = rau.patient_id
 WHERE COALESCE(employee_name, '') <> '';

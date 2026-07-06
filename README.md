@@ -87,8 +87,8 @@ Defaults:
 - patient-specific detail: stored in the reminder note
 - duplicate rule: one open automation reminder per patient, based on the most recent biologic dispense
 - insurance-change rule: the current primary insurance must have started or been created after the biologic dispense; a plain `changed_date` edit is not enough
-- staff alert: when the Linux apply runner inserts one or more new reminders, it posts a non-PHI staff alert through the MedStaff SMS gateway to Tara, Lisa, and Cindy so they check IMS Biologics reminders for PA/referral status
-- changed-user alert: when IMS audit tables identify the user who changed the insurance row, the Linux runner also sends that staff member a non-PHI SMS telling them they changed insurance for a biologic patient and must notify Tara so new prior authorization can be obtained
+- staff alert: when the Linux apply runner inserts one or more new reminders, it posts a staff alert through the MedStaff SMS gateway to Tara, Lisa, and Cindy so they check IMS Biologics reminders for PA/referral status; the SMS includes `patient_no` and no other patient identifier
+- changed-user alert: when IMS audit tables identify the user who changed the insurance row, the Linux runner also sends that staff member an SMS telling them they changed insurance for a biologic patient and must notify Tara so new prior authorization can be obtained; the SMS includes `patient_no` and no other patient identifier
 
 ## Validation On 2026-05-08
 
