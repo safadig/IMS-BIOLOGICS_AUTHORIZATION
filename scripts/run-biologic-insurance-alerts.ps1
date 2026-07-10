@@ -6,6 +6,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Assert-NativeSuccess {
+    param([Parameter(Mandatory)][string]$Command)
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Command failed with exit code $LASTEXITCODE."
+    }
+}
+
 $resolvedSql = Resolve-Path -LiteralPath $SqlPath
 $resolvedReports = New-Item -ItemType Directory -Force -Path $ReportsDir
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -15,6 +22,7 @@ $remoteCsv = "/tmp/biologic_insurance_change_alerts_$stamp.csv"
 $localOut = Join-Path $resolvedReports.FullName "biologic_insurance_change_alerts_$stamp.csv"
 
 scp $resolvedSql.Path "${RemoteHost}:$remoteSql" | Out-Null
+Assert-NativeSuccess "scp upload"
 
 $remoteScript = @"
 set -euo pipefail
@@ -30,8 +38,11 @@ rm -f "$remoteSql" "$remoteWrappedSql"
 "@
 
 $remoteScript | ssh $RemoteHost "bash -s"
+Assert-NativeSuccess "remote dbisql query"
 scp "${RemoteHost}:$remoteCsv" $localOut | Out-Null
+Assert-NativeSuccess "scp report download"
 ssh $RemoteHost "rm -f '$remoteCsv'"
+Assert-NativeSuccess "remote report cleanup"
 
 Write-Host ""
 Write-Host "Saved report to $localOut"

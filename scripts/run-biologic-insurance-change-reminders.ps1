@@ -8,6 +8,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Assert-NativeSuccess {
+    param([Parameter(Mandatory)][string]$Command)
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Command failed with exit code $LASTEXITCODE."
+    }
+}
+
 if ($DispenseLookbackDays -lt 1 -or $DispenseLookbackDays -gt 365) {
     throw "DispenseLookbackDays must be between 1 and 365."
 }
@@ -42,6 +49,7 @@ Set-Content -LiteralPath $localPrepared -Value $sql -NoNewline
 
 try {
     scp $localPrepared "${RemoteHost}:$remoteSql" | Out-Null
+    Assert-NativeSuccess "scp upload"
 
     if ($Apply) {
         $remoteScript = @"
@@ -55,6 +63,7 @@ conn="UID=`${IMS_DB_USER};PWD=`${IMS_DB_PASSWORD};ENG=`${IMS_DB_ENGINE};DBN=`${I
 rm -f "$remoteSql"
 "@
         $remoteScript | ssh $RemoteHost "bash -s" | Set-Content -Path $localOut
+        Assert-NativeSuccess "remote reminder apply"
         Write-Host "Created reminders. Saved dbisql output to $localOut"
         Get-Content -Path $localOut | Select-String -Pattern "OPEN_BIO_INS_CHANGE_PA_REMINDERS"
     } else {
@@ -71,8 +80,11 @@ printf "\nOUTPUT TO '$remoteCsv' FORMAT ASCII QUOTE '\"' DELIMITED BY ',' WITH C
 rm -f "$remoteSql" "$remoteWrappedSql"
 "@
         $remoteScript | ssh $RemoteHost "bash -s"
+        Assert-NativeSuccess "remote reminder dry-run"
         scp "${RemoteHost}:$remoteCsv" $localOut | Out-Null
+        Assert-NativeSuccess "scp candidate download"
         ssh $RemoteHost "rm -f '$remoteCsv'"
+        Assert-NativeSuccess "remote candidate cleanup"
         $lineCount = (Get-Content -Path $localOut | Measure-Object -Line).Lines
         $rowCount = [Math]::Max(0, $lineCount - 1)
         Write-Host "Dry run only. Saved candidate CSV to $localOut"
