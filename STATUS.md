@@ -1,7 +1,25 @@
 # Status - October 8, 2026
 
 Nightly biologic missing-claim monitoring is deployed and active at 11:40 p.m.
-Eastern on ims-referrals. Scope: all recorded history of the exact target codes.
+Eastern on ims-referrals. Current scope: the last nine calendar months of exact
+target-code dispenses. On October 8 the inclusive cutoff is January 8, 2026.
+The cutoff rolls forward daily; the complete day-30 claim window still applies.
+
+Current native queue: 20 open reminders for 13 patients, with zero dispense
+dates older than the cutoff. Following Gus's instructions, five verified
+full-return reminders and three additional outside-window reminders are Done.
+Their native completion audit reasons distinguish returns from scope closure.
+Nightly runs apply these same guarded completion rules to pending generated
+reminders. Partial returns and uncertain records remain for review.
+
+Thirty-five tests passed. Full native before/after snapshots verified that only
+managed note context and the intended Done/audit fields changed. Routing,
+patient linkage, all other native fields, and staff text remained intact. Final
+repeat apply at 14:14 Eastern made zero inserts, updates, or completions. There
+are 22 late-claim events within the current nine-month scope. Private return and
+outside-window reports retain the five return and three scope dispositions.
+
+The following records describe the earlier installation and context-only checks.
 
 28 IMS reminders for 20 patients were created and verified, assigned to Ghassan
 Safadi and Rachel Clark. All 28 now include appointment follow-up and the last
@@ -16,14 +34,30 @@ timestamp were altered. Recipients, priority, status, assignment details, and
 staff-authored note content were preserved. Open reminders refresh the managed
 context nightly; completed reminders are not reopened or updated.
 
+Return-to-stock checking is also deployed. The exact inventory dispense,
+dispense-linked return adjustment, native adjusted quantity, and stock ledger
+must agree before a full return suppresses a new missing-claim reminder.
+Partial or unknown returns remain actionable. All 28 open reminder notes now
+include return status; five show verified full returns. All other native fields,
+all child rows, and staff-authored note text were preserved. Twenty-nine tests
+passed, live SQL guards matched all 28 classifications, and repeat apply made
+zero inserts or updates.
+
 The all-history one-time check found 20 patients / 28 still-missing events,
 including 19731. All findings have verified reminders. Fifty other
 historical events had late matching claims and are separately reported.
 
-Latest source snapshot: 27 unresolved events for 19 patients. Patient 19731's
+Before return checking: 27 source events for 19 patients. Patient 19731's
 June 10 dispense row disappeared during installation; no subsequent J2357 claim
 was found. Its original reminder remains for staff review/disposition. Thus 28
-verified reminders exist, while 27 source events remain in the latest report.
+verified reminders exist. Inventory records now verify that this earlier event
+was fully returned to stock. Four other still-present source events also have
+verified full returns. Latest actionable report: 23 events for 16 patients.
+The five return dispositions were subsequently marked Done as authorized above.
+Private returned-to-stock.csv retains them, including the earlier finding whose
+billing dispense row disappeared. Outside-window.csv retains the three scope
+closures. Historical findings and source keys are retained; completed reminders
+are never reopened or rewritten.
 
 See docs/biologic-missing-claims-20261008.md for exact semantics, runtime paths,
 verification and private report locations. Existing insurance-change monitoring

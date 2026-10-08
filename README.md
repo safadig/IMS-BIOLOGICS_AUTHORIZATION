@@ -5,13 +5,21 @@ The nightly dispense-to-claim monitor is active at **11:40 p.m. Eastern** on
 Rachel Clark after a complete 30-day window without a subsequent appropriate
 J-code claim. See [STATUS.md](STATUS.md) and
 [the monitoring handoff](docs/biologic-missing-claims-20261008.md) for codes,
-matching rules, full target-code history scope, private reports, and verification.
+matching rules, rolling nine-month scope, private reports, and verification.
 
 Each reminder includes missed matching biologic appointments after dispense,
 the next biologic and any-type appointment, and the office/date of the last
 recorded matching J-code service. Open reminders refresh this context nightly
 while preserving staff notes and routing. Patient names use the native
 `Last, First  (patient_no)` display with the patient reference flag enabled.
+
+The monitor also verifies returns to stock against the exact inventory dispense,
+its return adjustment, adjusted quantity, and stock ledger. Full returns suppress
+new missing-claim reminders. Partial returns and inconsistent records remain for
+review. Verified full-return reminders are marked Done with an audit reason.
+The open queue covers the last nine calendar months; older generated reminders
+are marked Done with a separate outside-window reason. Historical records remain
+available in private reports.
 
 This workspace contains a first-pass IMS audit for a biologics safety problem:
 

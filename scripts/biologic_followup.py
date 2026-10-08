@@ -127,6 +127,7 @@ def enrich(events, appointments, services, today):
 
 
 def context_note(event):
+    from biologic_stock_returns import stock_note
     missed = event.get("missed_biologic_details", "") or "None recorded"
     # Complete appointment history stays in private CSV; keep native note <2000.
     if len(missed) > 400:
@@ -134,7 +135,11 @@ def context_note(event):
     last = (f"{event.get('last_biologic_service_date') or 'Unknown date'} "
             f"{event.get('last_biologic_service_office', 'UNKNOWN')} "
             f"({event['j_code']} service record)")
-    return (f"Missed {event['drug']} appointments after dispense: "
+    stock = stock_note(event) + "\n" if 'stock_return_status' in event else ''
+    if event.get('monitoring_window_status') == 'OUTSIDE WINDOW':
+        stock = (f"Outside rolling nine-month monitoring window (start {event['monitoring_start_date']}); "
+                 "closed for queue scope, not evidence of a claim or stock return.\n" + stock)
+    return (stock + f"Missed {event['drug']} appointments after dispense: "
             f"{event.get('missed_biologic_count', 0)}. {missed}.\n"
             f"Biologic bookings after dispense: {event.get('matching_biologic_bookings_count', 0)}.\n"
             f"Next {event['drug']} appointment: {event.get('next_biologic_appointment', 'NONE RECORDED')}.\n"
@@ -154,14 +159,18 @@ def merge_note(old, context):
     return result if len(result) <= 2000 else None
 
 
-def query_open_reminders(select):
-    sql = """
+def query_open_reminders(select, include_done=False):
+    pending = """EXISTS(SELECT 1 FROM tobe_done_detail d WHERE d.todo_id=t.tran_id
+ AND (d.task_status='P' OR d.task_status IS NULL OR d.task_status=''))"""
+    scope = "t.status IN ('G','D')" if include_done else f"t.status='G' AND {pending}"
+    sql = f"""
 SELECT t.*,pm.patient_no AS context_patient_no,
- COALESCE(pm.lastname,'') || ', ' || COALESCE(pm.firstname,'') AS context_patient_name
+ COALESCE(pm.lastname,'') || ', ' || COALESCE(pm.firstname,'') AS context_patient_name,
+ CASE WHEN {pending} THEN 'OPEN' ELSE 'DONE' END AS context_task_state,
+ (SELECT MAX(d.done_by) FROM tobe_done_detail d WHERE d.todo_id=t.tran_id
+  AND d.task_status='D') AS context_done_by
 FROM todo t JOIN patient_master pm ON pm.id=t.forwhom_id
-WHERE t.source LIKE 'BIO_NO_CLAIM30:%' AND t.status='G'
- AND EXISTS(SELECT 1 FROM tobe_done_detail d WHERE d.todo_id=t.tran_id
- AND (d.task_status='P' OR d.task_status IS NULL OR d.task_status=''));
+WHERE t.source LIKE 'BIO_NO_CLAIM30:%' AND {scope};
 """
     reminders = []
     for row in xml_select(select, sql):
@@ -173,7 +182,9 @@ WHERE t.source LIKE 'BIO_NO_CLAIM30:%' AND t.status='G'
         day = date.fromisoformat(f"{match[3][:4]}-{match[3][4:6]}-{match[3][6:]}").isoformat()
         reminders.append({"todo_id": tran, "source": source, "patient_id": patient,
             "patient_no": row['context_patient_no'], "patient_name": row['context_patient_name'],
-            "drug": JCODES[match[2]], "j_code": match[2], "dispense_date": day, "old_note": old})
+            "drug": JCODES[match[2]], "j_code": match[2], "dispense_date": day, "old_note": old,
+            "reminder_task_state": row['context_task_state'], "reminder_parent_status": row['status'],
+            "reminder_completion_reason": row['context_done_by'] or ''})
     return reminders
 
 

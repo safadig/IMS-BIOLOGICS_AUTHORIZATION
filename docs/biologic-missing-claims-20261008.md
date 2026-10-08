@@ -35,7 +35,7 @@ detail autoincrement assigns its ID. No table-wide lock or MAX+1 allocator is
 used. The reminder is editable (is_auto=N), with source
 BIO_NO_CLAIM30:<patient_id>:<J-code>:<YYYYMMDD>. All existing source keys suppress
 duplicates, including reminders staff have completed. No existing reminder is
-reopened or automatically completed. Open reminders refresh only their managed
+reopened. Open reminders refresh only their managed
 follow-up note section, preserving staff-authored text and routing. A new claim is checked again
 inside the insert transaction, as is the continued presence of the dispense
 event. Recipient identities are checked each run.
@@ -64,7 +64,8 @@ section remains intact; malformed markers or notes that would exceed the native
 2,000-character limit are preserved and reported as skipped. Full native notes
 are read through XML export to avoid console output truncation. Completed
 reminders are not updated. Titles, recipients, priority, dates, and assignment
-rows are not changed by context refresh.
+rows are not changed by context refresh. User-authorized full-return and
+outside-window completion separately changes native child Done/audit fields.
 
 Native patient reminders use forwhom_name `Last, First  (patient_no)` and
 reference_flag `1`. New inserts now use both. All 28 existing generated
@@ -72,24 +73,108 @@ reminders were corrected to this native display on October 8, after comparing
 manually created patient reminders. Saved native fields were verified; the
 minimized IMS window prevented a visual icon check.
 
-## Initial scope and schedule
+## Return-to-stock verification
 
-The monitor includes all recorded history for the exact target codes. These
-codes first appear in June/July 2025. After the broader one-time audit found just
-four additional older patient findings, the original unrestricted request was
-applied to those too. There is no rolling cutoff. An explicit --start-date
-override is available for bounded dry-run investigations.
+Gus also requested return checking on October 8. The native record is
+drug_adjustment.adjust_for='1', linked by its deliberately misspelled
+despense_id to prescription_dispense.tran_id. Live records include unused-drug
+notes and the corresponding item_ledger.ref_type='1' transactions. Other
+adjustment types do not count as dispense returns. Returns can be entered by
+any staff member; entered_by joins emp_master to display the actual person.
+
+Match inventory dispenses to the same patient, dispense date, and drug family,
+including every mixed-dose line. Each accepted return must match the exact
+dispense ID, patient, item, and internal lot ID, with a return date from dispense
+through today. Its positive quantity must agree with the linked stock ledger
+quantity for that adjustment, patient, item, lot, and office. Summed accepted
+returns must also agree with prescription_dispense.adj_qty. Quantities use
+Decimal and inventory units, not J-code billing units or milligrams.
+
+All matching inventory lines must be fully accounted for, with all billed
+dispense codes covered, before status is FULLY RETURNED TO STOCK. Partial
+returns remain actionable. Missing inventory records, wrong identities,
+quantity/ledger discrepancies, zero/invalid quantities, excess returns, or
+other linked adjustment types remain UNKNOWN / REVIEW. Neither a removed
+billing charge nor a missed appointment proves a stock return.
+
+New reminder inserts recheck the full-return predicate inside the statement.
+Verified full returns are excluded from missing-current.csv and retained in
+returned-to-stock.csv. Existing open reminders receive return status,
+quantities, return dates, office, staff, and record references in their managed
+note section. Gus subsequently authorized marking these full returns Done.
+Only pending detail rows belonging to the exact generated source are completed;
+the full-return predicate and exact parent note are rechecked in the write.
+Native task_status becomes D, with current done_date/time, system ID -1, and
+done_by='Biologic stock return monitor'. The parent and source key are retained,
+matching native My Tasks completion. Other routing and assignment fields remain
+intact. Partial and unknown returns do not qualify for completion.
+
+Return extension verification on October 8:
+
+- Initial return tests passed, covering full/partial/fractional/mixed-dose quantities,
+  identity/date mismatches, counter/ledger disagreement, and missing records.
+- Live SQL suppression predicates matched Python classifications for all 28
+  open reminders. Five were fully returned, all entered by Rachel Clark.
+- Four fully returned events still appeared in the billing source; these are
+  now excluded. The fifth return accounts for the earlier reminder whose
+  billing dispense disappeared. Latest actionable count is 23 events for 16
+  patients. Fifty late-claim events remain separately reported.
+- Apply refreshed 28 notes, with no new reminders or skipped notes. Full-row
+  readback verified that only note and changed_date changed; all 28 child rows
+  and staff text outside the managed section were preserved.
+- The initial context-only repeat at 14:06 Eastern made zero inserts, updates,
+  or skips. After Gus's completion instruction, five verified full-return
+  reminders were marked Done and independently read back.
+- Native before/after snapshots and prior deployed source copies are private
+  under output/biologic_missing_claims/stock-return-20261008. JSON snapshots use
+  mode 0600. Local latest-returned-to-stock.csv is Git-ignored with other reports.
+
+## Current scope and schedule
+
+The original one-time check covered all recorded history of the exact target
+codes, which first appear in June/July 2025. Gus subsequently limited open
+reminders to the last nine calendar months. The current cutoff is January 8,
+2026, inclusive, for October 8's run. It is recomputed daily by calendar-month
+subtraction, clamping the day only when the target month is shorter. It is not
+a 270-day approximation. The complete dispense-through-day-30 claim window
+still applies within that scope.
+
+Pending generated reminders older than the cutoff receive a managed note
+explaining the scope closure and native Done details with
+done_by='Biologic monitoring window'. The write rechecks the exact source,
+patient, prior note, pending detail status, and encoded dispense date against
+the cutoff. An old unresolved claim is not mislabeled as a stock return. Done
+reminders are retained and never reopened. Explicit --start-date overrides can
+produce broader historical dry-run reports; apply is always constrained to at
+least the rolling nine-month cutoff.
+
+Current verification: 35 tests passed, including calendar/leap/month-end
+cutoffs, inclusive boundary, completion refusal for partial/unknown returns,
+and separate guarded window completion. Five full returns and three additional
+outside-window reminders are now Done. Native readback confirmed 20 open
+reminders for 13 patients and zero older open events. Twenty-two late-claim
+events lie within the current monitoring window. Final repeat apply at 14:14
+Eastern created, updated, and completed zero reminders.
+
+The full-row completion checks allowed only the native child task_status,
+done_date/time/by/by_id and change audit fields, plus managed parent note and
+changed_date. Every other field and staff note content was preserved. Private
+completion-before/after and window-before/after JSON snapshots are in the
+stock-return-20261008 output subdirectory, mode 0600.
 
 Runtime files:
 
 - /opt/ims_router/biologic_missing_claims.py
 - /opt/ims_router/biologic_followup.py
+- /opt/ims_router/biologic_stock_returns.py
 - /opt/ims_router/run-biologic-missing-claims.sh
 - /opt/ims_router/output/biologic_missing_claims/status.json
 - /opt/ims_router/output/biologic_missing_claims/missing-current.csv
 - /opt/ims_router/output/biologic_missing_claims/late-claims.csv
 - /opt/ims_router/output/biologic_missing_claims/open-reminder-context.csv
 - /opt/ims_router/output/biologic_missing_claims/appointment-history.csv
+- /opt/ims_router/output/biologic_missing_claims/returned-to-stock.csv
+- /opt/ims_router/output/biologic_missing_claims/outside-window.csv
 - /opt/ims_router/logs/biologic_missing_claims.log
 
 The existing user's crontab has exactly one new entry at 23:40 daily. Runtime
@@ -102,7 +187,7 @@ No email or SMS is sent; delivery is the native IMS My Tasks recipient assignmen
 Reports contain patient information and are Git-ignored. Runtime reports use
 umask 077 and mode 0600; scheduled logs contain aggregate counts only.
 
-## Verified production result
+## Initial production result before return and window dispositions
 
 - Nineteen focused tests passed, including day 30/31, prior/same-day claims,
   wrong drug/patient, unclaimed charges, late claims, mixed doses, all mappings,
@@ -135,8 +220,10 @@ During installation, the June 10, 2026 XO150 dispense for patient 19731
 (billing_detail 706953/2) disappeared from IMS. Final source readback found no
 such row and no new subsequent J2357 claim. The latest monitor snapshot therefore
 has 27 unresolved events across 19 patients. The 28th reminder records the
-earlier valid finding and remains pending for staff disposition. Do not describe
-this as a new claim or have the monitor automatically remove the reminder.
+earlier valid finding. Subsequent inventory investigation verified a full
+return to stock; following Gus's instruction the reminder now records that
+disposition and is Done. Do not describe this as a new claim. The history and
+source key are retained.
 
 An early pilot waiting for an exclusive table lock was canceled before any
 insert. Native autoincrement was then verified live and used instead. No other

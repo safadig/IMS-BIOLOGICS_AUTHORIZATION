@@ -56,6 +56,17 @@ class Rules(unittest.TestCase):
         self.assertEqual(self.check([row("2025-12-31")]), ([], []))
         self.assertEqual(len(self.check([row("2026-01-01"), row("2026-02-03", "J2357", "Y")])[0]), 1)
 
+    def test_nine_calendar_month_cutoff(self):
+        self.assertEqual(monitor.monitoring_cutoff(date(2026, 10, 8)), date(2026, 1, 8))
+        self.assertEqual(monitor.monitoring_cutoff(date(2026, 11, 30)), date(2026, 2, 28))
+        self.assertEqual(monitor.monitoring_cutoff(date(2024, 11, 30)), date(2024, 2, 29))
+
+    def test_cutoff_is_inclusive_and_old_dispense_excluded(self):
+        today = date(2026, 10, 8)
+        missing, _ = monitor.evaluate([row('2026-01-07'), row('2026-01-08')], today,
+                                       monitor.monitoring_cutoff(today))
+        self.assertEqual([e['dispense_date'] for e in missing], ['2026-01-08'])
+
     def test_sql_routes_both_and_dedupes_done(self):
         event = self.check([row("2026-01-01")])[0][0]
         sql = monitor.insert_sql(event)

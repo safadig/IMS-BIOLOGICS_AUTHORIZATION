@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import calendar
 import csv
 import json
 import os
@@ -21,6 +22,12 @@ DRUGS = {
     "TEZ": ("TEZSPIRE", "J2356", 123),
 }
 SOURCE = "BIO_NO_CLAIM30"
+
+
+def monitoring_cutoff(today, months=9):
+    year, month0 = divmod(today.year * 12 + today.month - 1 - months, 12)
+    month = month0 + 1
+    return date(year, month, min(today.day, calendar.monthrange(year, month)[1]))
 
 
 def sql_string(value):
@@ -107,9 +114,11 @@ def evaluate(rows, today, start_date):
 
 def write_report(path, events):
     from biologic_followup import FIELDS
+    from biologic_stock_returns import FIELDS as STOCK_FIELDS
     fields = ["patient_no", "patient_name", "drug", "codes", "dispense_date",
               "deadline", "days_since_dispense", "j_code", "later_claim_date",
-              "later_posted_j_date", "source", "todo_id"] + FIELDS
+              "later_posted_j_date", "source", "todo_id", "reminder_task_state",
+              "reminder_completion_reason", "monitoring_start_date", "monitoring_window_status"] + FIELDS + STOCK_FIELDS
     with path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
@@ -120,6 +129,7 @@ def write_report(path, events):
 
 def insert_sql(event):
     from biologic_followup import START, END, context_note
+    from biologic_stock_returns import fully_returned_sql
     q = sql_string
     note = (f"{event['drug']} dispensed {event['dispense_date']} "
             f"({'/'.join(event['codes'])}). No subsequent {event['j_code']} claim "
@@ -156,6 +166,7 @@ WHERE NOT EXISTS(SELECT 1 FROM todo WHERE source={q(event['source'])})
  WHERE bh.patient_id={int(event['patient_id'])}
  AND bd.service_date={q(event['dispense_date'])}
  AND bd.billing_id IN ({dispense_codes}))
+ AND NOT {fully_returned_sql(event)}
  AND NOT EXISTS(SELECT 1 FROM billing_detail bd
  JOIN billing_header bh ON bh.tran_id=bd.tran_id
  JOIN claim_tracker ct ON ct.tran_id=bd.tran_id AND ct.sr_id=bd.sr_id
@@ -176,31 +187,57 @@ COMMIT;
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
-    parser.add_argument("--start-date", default="1900-01-01",
-                        help="All recorded target-code history by default; explicit override is fixed")
+    parser.add_argument("--start-date", default=None,
+                        help="Rolling nine calendar months by default; earlier override is dry-run only")
     parser.add_argument("--output-dir", default="/opt/ims_router/output/biologic_missing_claims")
     args = parser.parse_args()
     os.umask(0o077)
     today = date.today()
-    missing, late = evaluate(query_rows(), today, date.fromisoformat(args.start_date))
+    cutoff = monitoring_cutoff(today)
+    start_date = date.fromisoformat(args.start_date) if args.start_date else cutoff
+    if args.apply:
+        start_date = max(start_date, cutoff)
+    missing, late = evaluate(query_rows(), today, start_date)
     from biologic_followup import (query_open_reminders, query_followup, enrich,
                                    context_note, merge_note, refresh_sql)
     select, execute = db_helpers()
-    reminders = query_open_reminders(select)
-    appointments, services = query_followup(select, [e['patient_id'] for e in missing + late + reminders])
-    enrich(missing + late + reminders, appointments, services, today)
+    all_reminders = query_open_reminders(select, include_done=True)
+    reminders = [r for r in all_reminders if r['reminder_task_state'] == 'OPEN'
+                 and r['reminder_parent_status'] == 'G']
+    appointments, services = query_followup(select, [e['patient_id'] for e in missing + late + all_reminders])
+    enrich(missing + late + all_reminders, appointments, services, today)
+    from biologic_stock_returns import query_stock, enrich_stock, complete_return_sql, complete_window_sql
+    dispenses, returns = query_stock(select, [e['patient_id'] for e in missing + late + all_reminders])
+    enrich_stock(missing + late + all_reminders, dispenses, returns, today)
+    for event in missing + late + all_reminders:
+        event['monitoring_start_date'] = cutoff.isoformat()
+        event['monitoring_window_status'] = ('OUTSIDE WINDOW' if event['dispense_date'] < cutoff.isoformat()
+                                             else 'INSIDE WINDOW')
+    outside = [r for r in reminders if r['monitoring_window_status'] == 'OUTSIDE WINDOW']
+    outside_report = {r['source']: r for r in all_reminders if
+                      r['reminder_completion_reason'] == 'Biologic monitoring window'}
+    outside_report.update({r['source']: r for r in outside})
+    returned_events = [e for e in missing if e['stock_return_status'] == 'FULLY RETURNED TO STOCK']
+    missing = [e for e in missing if e['stock_return_status'] != 'FULLY RETURNED TO STOCK']
+    # Preserve already-created reminders and add verified return disposition to their note.
+    returned_report = {e['source']: e for e in returned_events}
+    returned_report.update({e['source']: e for e in all_reminders
+                            if e['stock_return_status'] == 'FULLY RETURNED TO STOCK'})
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
     write_report(out / "missing-current.csv", missing)
     write_report(out / "late-claims.csv", late)
     write_report(out / "open-reminder-context.csv", reminders)
+    write_report(out / "returned-to-stock.csv", list(returned_report.values()))
+    write_report(out / 'outside-window.csv', list(outside_report.values()))
     history = out / "appointment-history.csv"
     with history.open("w", newline="", encoding="utf-8-sig") as handle:
         fields = ["patient_no", "source", "dispense_date", "drug", "appointment_id",
                   "date", "time", "office", "status", "canceled", "description"]
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
-        for event in missing + late:
+        history_events = {e['source']: e for e in missing + late + returned_events + all_reminders}
+        for event in history_events.values():
             for appt in event['_appointments']:
                 writer.writerow({**event, **appt})
     history.chmod(0o600)
@@ -218,6 +255,8 @@ SELECT 'EMP|' || CAST(empid AS VARCHAR(20)) || '|' || COALESCE(firstname,'') ||
     new = [e for e in missing if e["source"] not in existing]
     updated = 0
     skipped = 0
+    completed = 0
+    completed_outside = 0
     if args.apply:
         for event in new:
             with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False) as handle:
@@ -265,12 +304,58 @@ WHERE t.source LIKE '{SOURCE}:%' AND t.todo_by_multi_id=',1,24,'
                 if current.get(reminder['todo_id']) != note:
                     raise RuntimeError("Reminder context changed concurrently; inspect before retry")
                 updated += 1
+        # Gus authorized completing these monitor reminders when fully returned.
+        # The live predicate and exact-note guard protect concurrent staff changes.
+        for reminder in reminders:
+            is_return = reminder['stock_return_status'] == 'FULLY RETURNED TO STOCK'
+            is_outside = reminder['monitoring_window_status'] == 'OUTSIDE WINDOW'
+            if not is_return and not is_outside:
+                continue
+            expected_note = merge_note(reminder['old_note'], context_note(reminder))
+            if expected_note is None:
+                continue
+            with tempfile.NamedTemporaryFile('w', suffix='.sql', delete=False) as handle:
+                handle.write(complete_return_sql(reminder, expected_note) if is_return
+                             else complete_window_sql(reminder, expected_note, cutoff))
+                sql_path = handle.name
+            try:
+                result = execute(sql_path)
+                if result.returncode:
+                    raise RuntimeError('Reminder disposition completion failed')
+            finally:
+                Path(sql_path).unlink(missing_ok=True)
+            verified_done = [s.strip() for s in select(f"""
+SELECT 'DONE|' || CAST(t.tran_id AS VARCHAR(30)) FROM todo t
+WHERE t.tran_id={int(reminder['todo_id'])} AND t.source={sql_string(reminder['source'])}
+ AND NOT EXISTS(SELECT 1 FROM tobe_done_detail d WHERE d.todo_id=t.tran_id
+ AND (d.task_status='P' OR d.task_status IS NULL OR d.task_status=''))
+ AND EXISTS(SELECT 1 FROM tobe_done_detail d WHERE d.todo_id=t.tran_id
+ AND d.task_status='D' AND d.done_by={sql_string('Biologic stock return monitor' if is_return
+                                              else 'Biologic monitoring window')});
+""") if s.strip().startswith('DONE|')]
+            if verified_done != [f"DONE|{reminder['todo_id']}"]:
+                raise RuntimeError('Reminder completion readback failed')
+            reminder['reminder_task_state'] = 'DONE'
+            reminder['reminder_completion_reason'] = ('Biologic stock return monitor' if is_return
+                                                      else 'Biologic monitoring window')
+            completed += int(is_return)
+            completed_outside += int(not is_return)
+        write_report(out / 'open-reminder-context.csv',
+                     [r for r in reminders if r['reminder_task_state'] == 'OPEN'])
+        write_report(out / 'returned-to-stock.csv', list(returned_report.values()))
+        write_report(out / 'outside-window.csv', list(outside_report.values()))
     summary = {"run_at": datetime.now().isoformat(), "apply": args.apply,
-               "start_date": args.start_date, "missing_events": len(missing),
+               "start_date": start_date.isoformat(), "monitoring_cutoff": cutoff.isoformat(),
+               "missing_events": len(missing),
                "missing_patients": len({e['patient_id'] for e in missing}),
                "late_claim_events": len(late), "new_reminders": len(new),
+               "fully_returned_source_events": len(returned_events),
+               "fully_returned_open_reminders": sum(e['stock_return_status'] == 'FULLY RETURNED TO STOCK'
+                                                    for e in reminders),
                "created_and_verified": len(new) if args.apply else 0,
                "context_updated_and_verified": updated, "context_skipped": skipped}
+    summary['completed_returned_reminders'] = completed
+    summary['completed_outside_window_reminders'] = completed_outside
     (out / "status.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary), flush=True)
 

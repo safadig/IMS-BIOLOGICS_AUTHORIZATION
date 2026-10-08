@@ -5,7 +5,10 @@ project:
     Tezspire patients whose current primary insurance appears to have changed
     after the most recent biologic dispense, plus nightly monitoring for
     dispenses without subsequent appropriate J-code claims after 30 days,
-    including appointment follow-up and last matching service office context.
+    including appointment follow-up, last matching service office context,
+    and verified return-to-stock disposition. The open reminder queue covers
+    nine calendar months; fully returned or out-of-window monitor reminders
+    are completed with separate native audit reasons.
 
 handoff:
   read_first:
@@ -63,6 +66,9 @@ main_tables_files_services:
     - claim_tracker
     - claim_detail
     - emp_master
+    - prescription_dispense
+    - drug_adjustment
+    - item_ledger
   key_files:
     - sql/biologic_insurance_change_alerts.sql
     - sql/biologic_insurance_change_reminder_candidates.sql
@@ -73,9 +79,11 @@ main_tables_files_services:
     - docs/implementation-notes.md
     - scripts/biologic_missing_claims.py
     - scripts/biologic_followup.py
+    - scripts/biologic_stock_returns.py
     - scripts/run-biologic-missing-claims.sh
     - tests/test_biologic_missing_claims.py
     - tests/test_biologic_followup.py
+    - tests/test_biologic_stock_returns.py
     - docs/biologic-missing-claims-20261008.md
 
 key_scripts_commands:
