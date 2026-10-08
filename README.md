@@ -1,5 +1,12 @@
 # IMS Biologics Authorization Guard
 
+The nightly dispense-to-claim monitor is active at **11:40 p.m. Eastern** on
+`ims-referrals`. It creates patient-linked IMS reminders for Ghassan Safadi and
+Rachel Clark after a complete 30-day window without a subsequent appropriate
+J-code claim. See [STATUS.md](STATUS.md) and
+[the monitoring handoff](docs/biologic-missing-claims-20261008.md) for codes,
+matching rules, fixed initial scope, private reports, and verification.
+
 This workspace contains a first-pass IMS audit for a biologics safety problem:
 
 When a patient is scheduled to receive Xolair, Fasenra, or Tezspire, flag cases where the patient's current primary insurance appears to have changed after the most recent drug dispense charge. Those patients need PA/no-PA verification before administration.
