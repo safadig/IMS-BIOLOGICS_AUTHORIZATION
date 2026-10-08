@@ -1,4 +1,5 @@
 import sys
+import re
 import unittest
 from datetime import date
 from pathlib import Path
@@ -82,6 +83,45 @@ class Followup(unittest.TestCase):
         self.assertIn("d.task_status='P'", sql)
         self.assertNotIn('todo_by_multi_id=', sql)
         self.assertNotIn('UPDATE tobe_done_detail', sql)
+
+    def test_legacy_paragraph_migration_preserves_staff_prefix_and_suffix(self):
+        e = event()
+        e['old_note'] = ('Staff: review 30-day insurance rule.\n'
+            'XOLAIR dispensed 2026-09-01 (XO150/XOL75). No subsequent J2357 claim '
+            'is recorded after the full 30-day window. Review administration, '
+            'billing/claim submission, supply source, or documented disposition. '
+            'Day-30 deadline: 2026-10-01. A billing line without a linked claim '
+            'does not satisfy this check.\nStaff suffix')
+        note = f.window_note(e)
+        self.assertTrue(note.startswith('Staff: review 30-day insurance rule.\n'))
+        self.assertTrue(note.endswith('\nStaff suffix'))
+        self.assertIn('Day-60 deadline: 2026-10-31.', note)
+        self.assertIn('(XO150/XOL75)', note)
+        self.assertEqual(f.window_note({**e, 'old_note': note}), note)
+
+    def test_deferral_and_title_are_guarded_atomic_without_rerouting(self):
+        e = {'todo_id': '1', 'source': 'BIO_NO_CLAIM30:1:J2357:20260901',
+             'old_note': 'staff', 'old_title': f.LEGACY_TITLE, 'defer_date': '2026-11-01'}
+        sql = f.refresh_sql(e, 'new')
+        self.assertIn("IF @@ROWCOUNT=1 THEN", sql)
+        self.assertIn("show_date='2026-11-01',todo_date='2026-11-01'", sql)
+        self.assertIn("COALESCE(todo,'')='" + f.LEGACY_TITLE + "'", sql)
+        self.assertIn("todo='" + f.TITLE + "'", sql)
+        self.assertNotIn('todo_by_multi_id=', sql)
+        e['old_title'] = 'Staff custom heading'
+        self.assertIn("todo='Staff custom heading'", f.refresh_sql(e, 'new'))
+
+    def test_native_windows_staff_note_line_endings_survive_xml_and_sql(self):
+        original = 'Staff prefix\r\nSecond line\rThird line\nSuffix'
+        def select(sql):
+            path = re.search(r"OUTPUT TO '([^']+)' FORMAT XML", sql)[1]
+            Path(path).write_bytes(('<resultset><row><column name="note">' +
+                                   original + '</column></row></resultset>').encode())
+        self.assertEqual(f.xml_select(select, 'SELECT note FROM todo')[0]['note'], original)
+        quoted = f.q(original)
+        self.assertEqual(quoted.count('CHAR(13)'), 2)
+        self.assertNotIn('\r', quoted)
+        self.assertIn('Staff prefix', quoted)
 
 
 if __name__ == '__main__':

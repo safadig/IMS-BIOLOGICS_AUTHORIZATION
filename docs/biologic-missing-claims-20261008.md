@@ -13,8 +13,8 @@ with First Allergy Shot appointments. Other generic/legacy dispense codes
 are outside this monitor.
 
 Group same-patient, same-drug, same-service-date dispense lines into one event,
-including mixed Xolair doses. Give the complete dispense-date through day-30
-service window, inclusive. A reminder becomes eligible on day 31. A qualifying
+including mixed Xolair doses. Give the complete dispense-date through day-60
+service window, inclusive. A reminder becomes eligible on day 61. A qualifying
 claim has the same patient and drug J-code, linked from billing_detail using
 tran_id/sr_id through claim_tracker to claim_detail. Payment, payer acceptance,
 and transmission are not required by this existence check. A bare J-code charge
@@ -35,10 +35,57 @@ detail autoincrement assigns its ID. No table-wide lock or MAX+1 allocator is
 used. The reminder is editable (is_auto=N), with source
 BIO_NO_CLAIM30:<patient_id>:<J-code>:<YYYYMMDD>. All existing source keys suppress
 duplicates, including reminders staff have completed. No existing reminder is
-reopened. Open reminders refresh only their managed
-follow-up note section, preserving staff-authored text and routing. A new claim is checked again
+reopened. Open reminders refresh their managed follow-up note section and
+apply the 60-day policy migration described below, preserving staff-authored
+text and routing. A new claim is checked again
 inside the insert transaction, as is the continued presence of the dispense
 event. Recipient identities are checked each run.
+
+## Sixty-day extension on October 8
+
+Gus extended the claim window from 30 to 60 days. CLAIM_WINDOW_DAYS=60 governs
+evaluation, native insert wording, write-time eligibility, policy context, and
+existing reminder dates. The complete day 60 is allowed; day 61 is the first
+alert date. The legacy BIO_NO_CLAIM30 source is intentionally retained as the
+stable event identity, so the threshold change cannot duplicate old reminders
+or reopen staff-completed ones. It no longer denotes the active deadline.
+
+Pending reminders created under the shorter policy receive the 60-day generated
+title, deadline, and managed context. Only the recognizable generated legacy
+paragraph is changed; staff prefixes/suffixes and custom headings are preserved.
+Premature pending reminders move their parent/detail todo_date and detail
+show_date to day 61. The parent update and detail deferral commit atomically,
+with exact previous note/title and pending-state guards. Existing completed
+reminders retain their historical text and dates.
+
+Each nightly run also checks pending reminders for an actual subsequent linked
+claim, including while they are deferred. A matching claim completes pending
+native details with done_by=Biologic matching claim monitor, preserving the
+parent/source. The completion statement rechecks same patient, J-code,
+dispense-through-today service date, billing-detail tran_id/sr_id linkage to
+claim_tracker and claim_detail, exact note and pending state. A bare charge,
+prior claim or another patient/drug cannot close the reminder. Full-return and
+window-scope completion retain their separate reasons and precedence.
+
+Forty-six tests passed, covering the full day-60/day-61 boundary, day-60 claim,
+extended-window deferral, qualifying/unlinked/wrong/prior claims, guarded
+completion, staff text/custom title preservation and repeat behavior. Native
+Windows CR/CRLF note line endings are retained by protecting literal CR in XML
+and quoting CR using CHAR(13); exact-note guards therefore retain staff text
+byte-for-byte. An initial guarded attempt changed zero rows because XML line
+ending normalization did not match the current Windows staff notes.
+
+Apply at 15:28 Eastern updated 18 pending reminders and deferred five. Native
+full-row readback allowed only intended parent note/title/date/change timestamp
+and pending detail date/show-date/change audit fields; Done records and all
+routing, patient reference and staff text were preserved. Current due queue is
+13 reminders for eight patients; five more are deferred to October 10, October
+12 (two), and November 2 (two). Two reminders had been independently completed
+by staff since the prior 20-open snapshot and were not touched. Repeat apply
+at 15:29 Eastern created, updated, deferred, completed and deleted zero records.
+Private before/after JSON and previous deployed sources are under
+output/biologic_missing_claims/window60-20261008. Nine-month scope, return
+verification and zero-dollar returned-visit cleanup are unchanged.
 
 ## Appointment context and native patient display
 
@@ -135,7 +182,7 @@ Gus explicitly authorized deletion of the zero-dollar, unclaimed dispense
 visits for returned drugs, including the examples in Rachel's return reminders.
 Nightly apply now runs this cleanup before claim evaluation. It scans linked
 returns for the exact target-code inventory history, independently of the
-nine-month open-reminder limit. There is no 30-day waiting period for a fully
+nine-month open-reminder limit. There is no claim-window waiting period for a fully
 returned dispense. Partial/uncertain returns never qualify.
 
 Each candidate must match the exact patient, dispense date, drug codes, and
@@ -183,8 +230,8 @@ codes, which first appear in June/July 2025. Gus subsequently limited open
 reminders to the last nine calendar months. The current cutoff is January 8,
 2026, inclusive, for October 8's run. It is recomputed daily by calendar-month
 subtraction, clamping the day only when the target month is shorter. It is not
-a 270-day approximation. The complete dispense-through-day-30 claim window
-still applies within that scope.
+a 270-day approximation. The complete dispense-through-day-60 claim window
+applies within that scope.
 
 Pending generated reminders older than the cutoff receive a managed note
 explaining the scope closure and native Done details with
@@ -195,7 +242,7 @@ reminders are retained and never reopened. Explicit --start-date overrides can
 produce broader historical dry-run reports; apply is always constrained to at
 least the rolling nine-month cutoff.
 
-Current verification: 35 tests passed, including calendar/leap/month-end
+Earlier nine-month verification: 35 tests passed, including calendar/leap/month-end
 cutoffs, inclusive boundary, completion refusal for partial/unknown returns,
 and separate guarded window completion. Five full returns and three additional
 outside-window reminders are now Done. Native readback confirmed 20 open

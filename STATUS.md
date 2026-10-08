@@ -1,5 +1,37 @@
 # Status - October 8, 2026
 
+The claim window is now **60 complete days**, with reminders first eligible on
+day 61. The same 11:40 p.m. Eastern cron and rolling nine-calendar-month scope
+remain active. October 8 apply at 15:28 Eastern updated 18 pending reminders
+to the new wording and policy context, and deferred five premature reminders
+using native parent/detail due dates and detail show dates. Current queue:
+13 due reminders for eight patients, plus five pending reminders scheduled for
+October 10, October 12 (two), and November 2 (two). Staff had independently
+completed two reminders since the prior 20-open snapshot; those were preserved.
+
+A pending generated reminder is completed with a distinct matching-claim reason
+when its same-patient, same-drug linked claim appears. This prevents a deferred
+reminder becoming due after its claim requirement was satisfied. Full return
+and outside-window completion keep their existing reasons and precedence;
+returned zero-dollar dispense visit cleanup continues independently. Source
+keys retain BIO_NO_CLAIM30 as a stable identifier for duplicate suppression.
+
+Forty-six tests passed. Full native before/after readback verified 18 parent
+updates and five pending detail date updates, with only intended note/title/date
+and native change-audit fields affected. All staff text outside the generated
+paragraph and managed section, recipients, patient linkage, and Done records
+were preserved. Windows CR/CRLF staff notes are now preserved exactly through
+XML retrieval and SQL quoting; the first guarded attempt changed zero rows
+because its old-note guard correctly rejected normalized line endings.
+Private full snapshots and previous deployed source copies are under
+output/biologic_missing_claims/window60-20261008. Repeat apply at 15:29 Eastern
+created, updated, deferred, completed, and deleted zero records. The live
+60-day report has 13 still-missing dispense events for eight patients and three
+late-claim events. Local latest reports are refreshed and remain Git-ignored.
+
+The following paragraphs retain earlier October 8 verification records; their
+counts and 30-day language describe the policy before the 60-day extension.
+
 Nightly biologic missing-claim monitoring is deployed and active at 11:40 p.m.
 Eastern on ims-referrals. Current scope: the last nine calendar months of exact
 target-code dispenses. On October 8 the inclusive cutoff is January 8, 2026.

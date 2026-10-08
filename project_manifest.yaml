@@ -4,11 +4,13 @@ project:
     IMS SQL Anywhere audit and reminder workflow for Xolair, Fasenra, and
     Tezspire patients whose current primary insurance appears to have changed
     after the most recent biologic dispense, plus nightly monitoring for
-    dispenses without subsequent appropriate J-code claims after 30 days,
+    dispenses without subsequent appropriate J-code claims after 60 days,
     including appointment follow-up, last matching service office context,
     and verified return-to-stock disposition. The open reminder queue covers
     nine calendar months; fully returned or out-of-window monitor reminders
-    are completed with separate native audit reasons.
+    are completed with separate native audit reasons. Existing premature reminders
+    are deferred to day 61; pending reminders with a matching linked claim
+    are completed using a claim-specific native audit reason.
     Verified full returns also remove their unclaimed zero-dollar dispense-only
     billing visits using guarded native deletion and retained audit history.
 

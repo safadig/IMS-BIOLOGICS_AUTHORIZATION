@@ -2,7 +2,7 @@
 
 The nightly dispense-to-claim monitor is active at **11:40 p.m. Eastern** on
 `ims-referrals`. It creates patient-linked IMS reminders for Ghassan Safadi and
-Rachel Clark after a complete 30-day window without a subsequent appropriate
+Rachel Clark after a complete 60-day window without a subsequent appropriate
 J-code claim. See [STATUS.md](STATUS.md) and
 [the monitoring handoff](docs/biologic-missing-claims-20261008.md) for codes,
 matching rules, rolling nine-month scope, private reports, and verification.
@@ -10,7 +10,9 @@ matching rules, rolling nine-month scope, private reports, and verification.
 Each reminder includes missed matching biologic appointments after dispense,
 the next biologic and any-type appointment, and the office/date of the last
 recorded matching J-code service. Open reminders refresh this context nightly
-while preserving staff notes and routing. Patient names use the native
+while preserving staff notes and routing. Reminders become due on day 61.
+Existing premature reminders are deferred to that date; a matching linked claim
+closes the pending monitor reminder before it can become a stale alert. Patient names use the native
 `Last, First  (patient_no)` display with the patient reference flag enabled.
 
 The monitor also verifies returns to stock against the exact inventory dispense,

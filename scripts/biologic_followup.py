@@ -1,5 +1,5 @@
 """Appointment and last J-code service context for biologic reminder events."""
-from datetime import date
+from datetime import date, timedelta
 import re
 import tempfile
 from pathlib import Path
@@ -7,6 +7,9 @@ import xml.etree.ElementTree as ET
 
 PROCEDURES = {"21": "XOLAIR", "53": "FASENRA", "55": "TEZSPIRE"}
 JCODES = {"J2357": "XOLAIR", "J0517": "FASENRA", "J2356": "TEZSPIRE"}
+CLAIM_WINDOW_DAYS = 60
+TITLE = "Biologic dispensed - no J-code claim after 60 days"
+LEGACY_TITLE = "Biologic dispensed - no J-code claim after 30 days"
 START = "\n[BIOLOGIC FOLLOW-UP]\n"
 END = "\n[/BIOLOGIC FOLLOW-UP]"
 FIELDS = ["missed_biologic_after_dispense", "missed_biologic_count",
@@ -17,7 +20,12 @@ FIELDS = ["missed_biologic_after_dispense", "missed_biologic_count",
 
 
 def q(value):
-    return "'" + str(value).replace("\\", "\\\\").replace("'", "''") + "'"
+    # dbisql normalizes literal CRLF in script text. Express CR explicitly so
+    # native Windows staff notes retain their exact line endings and guards match.
+    parts = str(value).split('\r')
+    literals = ["'" + part.replace("\\", "\\\\").replace("'", "''") + "'" for part in parts]
+    result = ' || CHAR(13) || '.join(literals)
+    return '(' + result + ')' if len(parts) > 1 else result
 
 
 def xml_select(select, sql):
@@ -29,8 +37,11 @@ def xml_select(select, sql):
     try:
         select(sql.rstrip().rstrip(';') + f"; OUTPUT TO {q(path)} FORMAT XML;")
         path.chmod(0o600)
+        # XML parsers normalize literal CR/CRLF. Character references preserve
+        # the database value, unlike text-mode reads or direct ET.parse.
+        raw = path.read_bytes().decode('utf-8').replace('\r', '&#13;')
         return [{c.attrib['name'].lower(): None if c.attrib.get('null') == 'true'
-                 else (c.text or '') for c in row} for row in ET.parse(path).getroot()]
+                 else (c.text or '') for c in row} for row in ET.fromstring(raw)]
     finally:
         path.unlink(missing_ok=True)
 
@@ -139,7 +150,12 @@ def context_note(event):
     if event.get('monitoring_window_status') == 'OUTSIDE WINDOW':
         stock = (f"Outside rolling nine-month monitoring window (start {event['monitoring_start_date']}); "
                  "closed for queue scope, not evidence of a claim or stock return.\n" + stock)
-    return (stock + f"Missed {event['drug']} appointments after dispense: "
+    policy = ''
+    if 'claim_window_status' in event:
+        policy = (f"Claim window: {CLAIM_WINDOW_DAYS} days; deadline {event['deadline']}; "
+                  f"first reminder date {event['first_reminder_date']}. "
+                  f"{event['claim_window_status']}.\n")
+    return (policy + stock + f"Missed {event['drug']} appointments after dispense: "
             f"{event.get('missed_biologic_count', 0)}. {missed}.\n"
             f"Biologic bookings after dispense: {event.get('matching_biologic_bookings_count', 0)}.\n"
             f"Next {event['drug']} appointment: {event.get('next_biologic_appointment', 'NONE RECORDED')}.\n"
@@ -165,6 +181,10 @@ def query_open_reminders(select, include_done=False):
     scope = "t.status IN ('G','D')" if include_done else f"t.status='G' AND {pending}"
     sql = f"""
 SELECT t.*,pm.patient_no AS context_patient_no,
+ (SELECT MIN(d.show_date) FROM tobe_done_detail d WHERE d.todo_id=t.tran_id
+  AND (d.task_status='P' OR d.task_status IS NULL OR d.task_status='')) AS context_show_min,
+ (SELECT MAX(d.show_date) FROM tobe_done_detail d WHERE d.todo_id=t.tran_id
+  AND (d.task_status='P' OR d.task_status IS NULL OR d.task_status='')) AS context_show_max,
  COALESCE(pm.lastname,'') || ', ' || COALESCE(pm.firstname,'') AS context_patient_name,
  CASE WHEN {pending} THEN 'OPEN' ELSE 'DONE' END AS context_task_state,
  (SELECT MAX(d.done_by) FROM tobe_done_detail d WHERE d.todo_id=t.tran_id
@@ -183,20 +203,66 @@ WHERE t.source LIKE 'BIO_NO_CLAIM30:%' AND {scope};
         reminders.append({"todo_id": tran, "source": source, "patient_id": patient,
             "patient_no": row['context_patient_no'], "patient_name": row['context_patient_name'],
             "drug": JCODES[match[2]], "j_code": match[2], "dispense_date": day, "old_note": old,
+            "old_title": row['todo'], "show_date_min": row['context_show_min'],
+            "show_date_max": row['context_show_max'],
             "reminder_task_state": row['context_task_state'], "reminder_parent_status": row['status'],
             "reminder_completion_reason": row['context_done_by'] or ''})
     return reminders
 
 
+def window_note(reminder):
+    """Change only the recognizable generated legacy paragraph, retaining staff text."""
+    old = reminder['old_note']
+    day = date.fromisoformat(reminder['dispense_date'])
+    pattern = (re.escape(f"{reminder['drug']} dispensed {day.isoformat()} (") +
+               r"([A-Z0-9/]+)" + re.escape(f"). No subsequent {reminder['j_code']} claim "
+               "is recorded after the full 30-day window. Review administration, "
+               "billing/claim submission, supply source, or documented disposition. "
+               f"Day-30 deadline: {(day + timedelta(days=30)).isoformat()}."))
+    matches = list(re.finditer(pattern, old))
+    if len(matches) != 1:
+        return old
+    match = matches[0]
+    replacement = (f"{reminder['drug']} dispensed {day.isoformat()} ({match[1]}). "
+                   f"Allow a full {CLAIM_WINDOW_DAYS}-day window for a subsequent "
+                   f"{reminder['j_code']} claim. Review administration, billing/claim submission, "
+                   "supply source, or documented disposition. "
+                   f"Day-{CLAIM_WINDOW_DAYS} deadline: "
+                   f"{(day + timedelta(days=CLAIM_WINDOW_DAYS)).isoformat()}.")
+    return old[:match.start()] + replacement + old[match.end():]
+
+
 def refresh_sql(reminder, new_note):
-    # Optimistic exact-note check preserves concurrent staff edits. Only note and
-    # audit timestamp change; all-done detail history is protected in the write.
+    # Exact note/title guards preserve concurrent staff edits. Policy migration
+    # also updates the generated title and defers pending native dates atomically.
+    # Completed detail history and staff-renamed titles are protected.
+    policy_fields = ''
+    title_guard = ''
+    defer = reminder.get('defer_date')
+    if 'old_title' in reminder:
+        title = TITLE if reminder['old_title'] == LEGACY_TITLE else reminder['old_title']
+        policy_fields = f",todo={q(title) if title is not None else 'NULL'}"
+        title_guard = f" AND COALESCE(todo,'')={q(reminder['old_title'] or '')}"
+    if defer:
+        policy_fields += f",todo_date={q(defer)}"
+    child_update = f"""
+IF @@ROWCOUNT=1 THEN
+ UPDATE tobe_done_detail SET show_date={q(defer)},todo_date={q(defer)},
+ changed_date=CURRENT TIMESTAMP,changedby_id=-1
+ WHERE todo_id={int(reminder['todo_id'])}
+ AND (task_status='P' OR task_status IS NULL OR task_status='');
+END IF;
+""" if defer else ''
     return f"""
+SET TEMPORARY OPTION auto_commit='Off';
 SET TEMPORARY OPTION blocking_timeout='5000';
-UPDATE todo SET note={q(new_note)},changed_date=CURRENT TIMESTAMP
+BEGIN
+UPDATE todo SET note={q(new_note)},changed_date=CURRENT TIMESTAMP{policy_fields}
 WHERE tran_id={int(reminder['todo_id'])} AND source={q(reminder['source'])}
- AND status='G' AND COALESCE(note,'')={q(reminder['old_note'])}
+ AND status='G' AND COALESCE(note,'')={q(reminder['old_note'])}{title_guard}
  AND EXISTS(SELECT 1 FROM tobe_done_detail d WHERE d.todo_id=todo.tran_id
  AND (d.task_status='P' OR d.task_status IS NULL OR d.task_status=''));
+{child_update}
 COMMIT;
+END;
 """
