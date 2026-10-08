@@ -24,7 +24,7 @@ SOURCE = "BIO_NO_CLAIM30"
 
 
 def sql_string(value):
-    return "'" + str(value).replace("'", "''") + "'"
+    return "'" + str(value).replace("\\", "\\\\").replace("'", "''") + "'"
 
 
 def db_helpers():
@@ -106,18 +106,20 @@ def evaluate(rows, today, start_date):
 
 
 def write_report(path, events):
+    from biologic_followup import FIELDS
     fields = ["patient_no", "patient_name", "drug", "codes", "dispense_date",
               "deadline", "days_since_dispense", "j_code", "later_claim_date",
-              "later_posted_j_date", "source"]
+              "later_posted_j_date", "source", "todo_id"] + FIELDS
     with path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         for event in events:
-            writer.writerow({**event, "codes": "/".join(event["codes"])})
+            writer.writerow({**event, "codes": "/".join(event.get("codes", []))})
     path.chmod(0o600)
 
 
 def insert_sql(event):
+    from biologic_followup import START, END, context_note
     q = sql_string
     note = (f"{event['drug']} dispensed {event['dispense_date']} "
             f"({'/'.join(event['codes'])}). No subsequent {event['j_code']} claim "
@@ -127,6 +129,9 @@ def insert_sql(event):
             "A billing line without a linked claim does not satisfy this check.")
     if event["later_posted_j_date"]:
         note += f" A J-code charge exists dated {event['later_posted_j_date']}; review claim linkage."
+    if "missed_biologic_count" in event:
+        note += START + context_note(event) + END
+    patient_display = f"{event['patient_name']}  ({event['patient_no']})"
     dispense_codes = ",".join(q(code) for code, values in DRUGS.items()
                               if values[0] == event["drug"])
     # Both inserts commit together. Use the native detail autoincrement default
@@ -138,12 +143,12 @@ INSERT INTO todo (
  tran_id,tran_date,status,forwhom,forwhom_name,category_id,todo,todo_at,
  todo_date,todo_time,tobe_doneby,generated_by,priority,todo_by,todo_by_id,
  todo_by_multi_id,todo_by_multi_group,assignto_flag,forwhom_id,ref_tran_id,
- ref_sr_id,note,source,is_auto,created_date,changed_date,createdby_id,changedby_id)
-SELECT seq_todo_id.NEXTVAL,TODAY(),'G','P',{q(event['patient_name'])},
+ ref_sr_id,note,source,is_auto,reference_flag,created_date,changed_date,createdby_id,changedby_id)
+SELECT seq_todo_id.NEXTVAL,TODAY(),'G','P',{q(patient_display)},
  {event['category_id']},'Biologic dispensed - no J-code claim after 30 days','T',
  TODAY(),CURRENT TIME,'Safadi, Ghassan * Clark, Rachel','U','H','U',NULL,
  ',1,24,',NULL,'N',{int(event['patient_id'])},{int(event['tran_id'])},
- {int(event['sr_id'])},{q(note)},{q(event['source'])},'N',
+ {int(event['sr_id'])},{q(note)},{q(event['source'])},'N','1',
  CURRENT TIMESTAMP,CURRENT TIMESTAMP,-1,-1
 WHERE NOT EXISTS(SELECT 1 FROM todo WHERE source={q(event['source'])})
  AND EXISTS(SELECT 1 FROM billing_detail bd
@@ -178,11 +183,27 @@ def main():
     os.umask(0o077)
     today = date.today()
     missing, late = evaluate(query_rows(), today, date.fromisoformat(args.start_date))
+    from biologic_followup import (query_open_reminders, query_followup, enrich,
+                                   context_note, merge_note, refresh_sql)
+    select, execute = db_helpers()
+    reminders = query_open_reminders(select)
+    appointments, services = query_followup(select, [e['patient_id'] for e in missing + late + reminders])
+    enrich(missing + late + reminders, appointments, services, today)
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
     write_report(out / "missing-current.csv", missing)
     write_report(out / "late-claims.csv", late)
-    select, execute = db_helpers()
+    write_report(out / "open-reminder-context.csv", reminders)
+    history = out / "appointment-history.csv"
+    with history.open("w", newline="", encoding="utf-8-sig") as handle:
+        fields = ["patient_no", "source", "dispense_date", "drug", "appointment_id",
+                  "date", "time", "office", "status", "canceled", "description"]
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        for event in missing + late:
+            for appt in event['_appointments']:
+                writer.writerow({**event, **appt})
+    history.chmod(0o600)
     # Verify the exact expected recipient identities every run; fail closed.
     identities = [line.strip() for line in select("""
 SELECT 'EMP|' || CAST(empid AS VARCHAR(20)) || '|' || COALESCE(firstname,'') ||
@@ -195,6 +216,8 @@ SELECT 'EMP|' || CAST(empid AS VARCHAR(20)) || '|' || COALESCE(firstname,'') ||
         if line.strip().startswith("KEY|"):
             existing.add(line.strip()[4:])
     new = [e for e in missing if e["source"] not in existing]
+    updated = 0
+    skipped = 0
     if args.apply:
         for event in new:
             with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False) as handle:
@@ -217,11 +240,37 @@ WHERE t.source LIKE '{SOURCE}:%' AND t.todo_by_multi_id=',1,24,'
                 verified.add(line.strip()[3:])
         if not expected <= verified:
             raise RuntimeError("Reminder readback failed")
+        planned_updates = []
+        for reminder in reminders:
+            note = merge_note(reminder['old_note'], context_note(reminder))
+            if note is None:
+                skipped += 1
+                continue
+            if note == reminder['old_note']:
+                continue
+            planned_updates.append((reminder, note))
+        if planned_updates:
+            with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False) as handle:
+                for reminder, note in planned_updates:
+                    handle.write(refresh_sql(reminder, note))
+                sql_path = handle.name
+            try:
+                result = execute(sql_path)
+                if result.returncode:
+                    raise RuntimeError("IMS context refresh failed")
+            finally:
+                Path(sql_path).unlink(missing_ok=True)
+            current = {r['todo_id']: r['old_note'] for r in query_open_reminders(select)}
+            for reminder, note in planned_updates:
+                if current.get(reminder['todo_id']) != note:
+                    raise RuntimeError("Reminder context changed concurrently; inspect before retry")
+                updated += 1
     summary = {"run_at": datetime.now().isoformat(), "apply": args.apply,
                "start_date": args.start_date, "missing_events": len(missing),
                "missing_patients": len({e['patient_id'] for e in missing}),
                "late_claim_events": len(late), "new_reminders": len(new),
-               "created_and_verified": len(new) if args.apply else 0}
+               "created_and_verified": len(new) if args.apply else 0,
+               "context_updated_and_verified": updated, "context_skipped": skipped}
     (out / "status.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary), flush=True)
 

@@ -1,7 +1,9 @@
 import importlib.util
+import sys
 import unittest
 from datetime import date
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 
 spec = importlib.util.spec_from_file_location(
     "monitor", Path(__file__).parents[1] / "scripts/biologic_missing_claims.py")
@@ -58,6 +60,8 @@ class Rules(unittest.TestCase):
         event = self.check([row("2026-01-01")])[0][0]
         sql = monitor.insert_sql(event)
         self.assertIn("',1,24,'", sql)
+        self.assertIn("'Test, Patient  (100)'", sql)
+        self.assertIn("'N','1',", sql)
         self.assertIn("INSERT INTO tobe_done_detail", sql)
         self.assertIn("WHERE NOT EXISTS(SELECT 1 FROM todo WHERE source=", sql)
         self.assertNotIn("LOCK TABLE", sql)

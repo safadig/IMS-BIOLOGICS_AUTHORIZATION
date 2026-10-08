@@ -4,7 +4,8 @@ project:
     IMS SQL Anywhere audit and reminder workflow for Xolair, Fasenra, and
     Tezspire patients whose current primary insurance appears to have changed
     after the most recent biologic dispense, plus nightly monitoring for
-    dispenses without subsequent appropriate J-code claims after 30 days.
+    dispenses without subsequent appropriate J-code claims after 30 days,
+    including appointment follow-up and last matching service office context.
 
 handoff:
   read_first:
@@ -48,6 +49,8 @@ database_or_external_systems:
 main_tables_files_services:
   ims_tables:
     - schedule_detail
+    - schedule_procedure
+    - office_master
     - billing_detail
     - billing_header
     - billing_master
@@ -69,8 +72,10 @@ main_tables_files_services:
     - scripts/run-biologic-insurance-change-reminders-linux.sh
     - docs/implementation-notes.md
     - scripts/biologic_missing_claims.py
+    - scripts/biologic_followup.py
     - scripts/run-biologic-missing-claims.sh
     - tests/test_biologic_missing_claims.py
+    - tests/test_biologic_followup.py
     - docs/biologic-missing-claims-20261008.md
 
 key_scripts_commands:

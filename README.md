@@ -7,6 +7,12 @@ J-code claim. See [STATUS.md](STATUS.md) and
 [the monitoring handoff](docs/biologic-missing-claims-20261008.md) for codes,
 matching rules, full target-code history scope, private reports, and verification.
 
+Each reminder includes missed matching biologic appointments after dispense,
+the next biologic and any-type appointment, and the office/date of the last
+recorded matching J-code service. Open reminders refresh this context nightly
+while preserving staff notes and routing. Patient names use the native
+`Last, First  (patient_no)` display with the patient reference flag enabled.
+
 This workspace contains a first-pass IMS audit for a biologics safety problem:
 
 When a patient is scheduled to receive Xolair, Fasenra, or Tezspire, flag cases where the patient's current primary insurance appears to have changed after the most recent drug dispense charge. Those patients need PA/no-PA verification before administration.

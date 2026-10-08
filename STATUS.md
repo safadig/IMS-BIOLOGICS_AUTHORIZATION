@@ -4,8 +4,17 @@ Nightly biologic missing-claim monitoring is deployed and active at 11:40 p.m.
 Eastern on ims-referrals. Scope: all recorded history of the exact target codes.
 
 28 IMS reminders for 20 patients were created and verified, assigned to Ghassan
-Safadi and Rachel Clark. Repeat apply created zero duplicates. Ten rule tests
-passed. Existing cron entries were preserved and the new entry read back once.
+Safadi and Rachel Clark. All 28 now include appointment follow-up and the last
+matching biologic service office/date, with native patient name/number display
+and patient reference flag. Nineteen focused tests passed. Repeat apply created
+zero duplicates and made zero further context updates. Existing cron entries
+were preserved and the new entry read back once.
+
+October 8 follow-up repair verified all 28 full parent rows and all 28 child
+rows: only patient display/reference flag, managed note context, and change
+timestamp were altered. Recipients, priority, status, assignment details, and
+staff-authored note content were preserved. Open reminders refresh the managed
+context nightly; completed reminders are not reopened or updated.
 
 The all-history one-time check found 20 patients / 28 still-missing events,
 including 19731. All findings have verified reminders. Fifty other
