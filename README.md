@@ -5,7 +5,7 @@ The nightly dispense-to-claim monitor is active at **11:40 p.m. Eastern** on
 Rachel Clark after a complete 30-day window without a subsequent appropriate
 J-code claim. See [STATUS.md](STATUS.md) and
 [the monitoring handoff](docs/biologic-missing-claims-20261008.md) for codes,
-matching rules, fixed initial scope, private reports, and verification.
+matching rules, full target-code history scope, private reports, and verification.
 
 This workspace contains a first-pass IMS audit for a biologics safety problem:
 

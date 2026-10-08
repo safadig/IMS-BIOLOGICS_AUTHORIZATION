@@ -127,6 +127,8 @@ def insert_sql(event):
             "A billing line without a linked claim does not satisfy this check.")
     if event["later_posted_j_date"]:
         note += f" A J-code charge exists dated {event['later_posted_j_date']}; review claim linkage."
+    dispense_codes = ",".join(q(code) for code, values in DRUGS.items()
+                              if values[0] == event["drug"])
     # Both inserts commit together. Use the native detail autoincrement default
     # instead of MAX+1 or a table lock; dedupe includes staff-completed rows.
     return f"""
@@ -144,6 +146,11 @@ SELECT seq_todo_id.NEXTVAL,TODAY(),'G','P',{q(event['patient_name'])},
  {int(event['sr_id'])},{q(note)},{q(event['source'])},'N',
  CURRENT TIMESTAMP,CURRENT TIMESTAMP,-1,-1
 WHERE NOT EXISTS(SELECT 1 FROM todo WHERE source={q(event['source'])})
+ AND EXISTS(SELECT 1 FROM billing_detail bd
+ JOIN billing_header bh ON bh.tran_id=bd.tran_id
+ WHERE bh.patient_id={int(event['patient_id'])}
+ AND bd.service_date={q(event['dispense_date'])}
+ AND bd.billing_id IN ({dispense_codes}))
  AND NOT EXISTS(SELECT 1 FROM billing_detail bd
  JOIN billing_header bh ON bh.tran_id=bd.tran_id
  JOIN claim_tracker ct ON ct.tran_id=bd.tran_id AND ct.sr_id=bd.sr_id
@@ -164,8 +171,8 @@ COMMIT;
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
-    parser.add_argument("--start-date", default="2025-10-08",
-                        help="Fixed initial backlog boundary; does not roll forward")
+    parser.add_argument("--start-date", default="1900-01-01",
+                        help="All recorded target-code history by default; explicit override is fixed")
     parser.add_argument("--output-dir", default="/opt/ims_router/output/biologic_missing_claims")
     args = parser.parse_args()
     os.umask(0o077)

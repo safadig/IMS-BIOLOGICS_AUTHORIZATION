@@ -36,15 +36,16 @@ used. The reminder is editable (is_auto=N), with source
 BIO_NO_CLAIM30:<patient_id>:<J-code>:<YYYYMMDD>. All existing source keys suppress
 duplicates, including reminders staff have completed. No existing reminder is
 reopened, rewritten, or automatically completed. A new claim is checked again
-inside the insert transaction. Recipient identities are checked each run.
+inside the insert transaction, as is the continued presence of the dispense
+event. Recipient identities are checked each run.
 
 ## Initial scope and schedule
 
-The initial reminder boundary is fixed at 2025-10-08 (past 12 months at setup),
-and does not roll forward. Gus was offered a backlog preference during work;
-no answer had arrived at installation, so this default was stated before apply.
-The broader one-time audit is read-only. Change the fixed boundary only when
-requested; do not silently write all historical reminders.
+The monitor includes all recorded history for the exact target codes. These
+codes first appear in June/July 2025. After the broader one-time audit found just
+four additional older patient findings, the original unrestricted request was
+applied to those too. There is no rolling cutoff. An explicit --start-date
+override is available for bounded dry-run investigations.
 
 Runtime files:
 
@@ -73,13 +74,21 @@ umask 077 and mode 0600; scheduled logs contain aggregate counts only.
 - Pilot reminder 940092 for patient 19731 was read back with pending detail,
   show date 2026-10-08, and recipients ,1,24,.
 - Initial production apply created and verified 24 reminders for 16 patients,
-  including that pilot. A repeat apply created zero reminders.
+  including that pilot. Full-history completion added four older reminders,
+  for 28 reminders across 20 patients. Repeat applies created zero reminders.
 - The full target-code history audit returned 28 still-missing events for 20
-  patients, including 19731. Four older patient findings are report-only.
+  patients, including 19731. All 28 findings have verified reminders.
 - Fifty historical events had a later matching claim beyond 30 days; these are
   in late-claims.csv. Thirty-six fall within the initial reminder boundary.
-- All 24 parent/child pairs were independently counted with correct recipients,
+- All 28 parent/child pairs were independently counted with correct recipients,
   pending status and visible show dates after creation.
+
+During installation, the June 10, 2026 XO150 dispense for patient 19731
+(billing_detail 706953/2) disappeared from IMS. Final source readback found no
+such row and no new subsequent J2357 claim. The latest monitor snapshot therefore
+has 27 unresolved events across 19 patients. The 28th reminder records the
+earlier valid finding and remains pending for staff disposition. Do not describe
+this as a new claim or have the monitor automatically remove the reminder.
 
 An early pilot waiting for an exclusive table lock was canceled before any
 insert. Native autoincrement was then verified live and used instead. No other

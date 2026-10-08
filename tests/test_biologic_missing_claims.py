@@ -62,6 +62,7 @@ class Rules(unittest.TestCase):
         self.assertIn("WHERE NOT EXISTS(SELECT 1 FROM todo WHERE source=", sql)
         self.assertNotIn("LOCK TABLE", sql)
         self.assertNotIn("MAX(tran_id)", sql)
+        self.assertIn("AND EXISTS(SELECT 1 FROM billing_detail", sql)
         self.assertEqual(sql.count("COMMIT;"), 1)
 
 
