@@ -12,12 +12,24 @@ Their native completion audit reasons distinguish returns from scope closure.
 Nightly runs apply these same guarded completion rules to pending generated
 reminders. Partial returns and uncertain records remain for review.
 
-Thirty-five tests passed. Full native before/after snapshots verified that only
+Thirty-nine tests passed. Full native before/after snapshots verified that only
 managed note context and the intended Done/audit fields changed. Routing,
 patient linkage, all other native fields, and staff text remained intact. Final
 repeat apply at 14:14 Eastern made zero inserts, updates, or completions. There
 are 22 late-claim events within the current nine-month scope. Private return and
 outside-window reports retain the five return and three scope dispositions.
+
+Returned zero-dollar dispense visit cleanup is deployed in the same nightly
+runner. The full exact-code inventory history has 34 verified full-return
+events and one partial return. Eight eligible dispense-only billing visits
+were deleted, with native header/detail deletion history independently verified
+and affected inventory/return/D-and-1 ledger rows unchanged. The three screenshot
+examples had already been deleted earlier today; their native history was read
+back. Partial returns and unsafe mixed/claimed/paid/clinical-linked visits are
+excluded from deletion. Full private before/after snapshots and a durable
+deletion journal are under visit-cleanup-evidence; the dated local CSV remains
+Git-ignored. Repeat apply at 15:02 Eastern found zero remaining fully returned
+visits and performed zero deletions or reminder changes. Queue remains 20 / 13.
 
 The following records describe the earlier installation and context-only checks.
 

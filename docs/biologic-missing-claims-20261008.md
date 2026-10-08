@@ -129,6 +129,53 @@ Return extension verification on October 8:
   under output/biologic_missing_claims/stock-return-20261008. JSON snapshots use
   mode 0600. Local latest-returned-to-stock.csv is Git-ignored with other reports.
 
+## Returned dispense visit cleanup
+
+Gus explicitly authorized deletion of the zero-dollar, unclaimed dispense
+visits for returned drugs, including the examples in Rachel's return reminders.
+Nightly apply now runs this cleanup before claim evaluation. It scans linked
+returns for the exact target-code inventory history, independently of the
+nine-month open-reminder limit. There is no 30-day waiting period for a fully
+returned dispense. Partial/uncertain returns never qualify.
+
+Each candidate must match the exact patient, dispense date, drug codes, and
+inventory superbill reference. Every billing line in the visit must be a
+matching zero-dollar dispense line. Header/line charges, payments, writeoffs,
+balances, transfers and open credit must all be zero. Claims, claim dates,
+receipts, rejections, packages, clinical links, attached documents,
+immunizations, other services, nonzero aging entries, and charge-origin stock
+ledger rows protect the visit. Exact line count, quantities, update timestamps,
+and current full-return evidence are rechecked in the delete statement.
+
+The implementation deletes only billing_header, leaving native cascade,
+balance, and history triggers enabled. No progress note, appointment, inventory
+dispense, or return record is directly deleted. Native deletion history must be
+written for the header and every line, no billing detail may remain, and the
+full return must still verify before COMMIT; validation failure rolls back.
+Full affected billing/ancillary and inventory/return/ledger snapshots are saved
+before mutation, with after snapshots and an append-only deletion journal.
+Affected inventory, return and D/1 stock ledger rows must compare unchanged.
+Evidence is private under output/biologic_missing_claims/visit-cleanup-evidence,
+with mode 0600 files. Unchanged or newly unsafe candidates remain for review.
+
+The initial inventory audit found 34 fully returned events and one partial
+return. Eight matching billing visits remained; all eight passed the guarded
+preflight. The three screenshot examples had already-absent original visits.
+The guarded transaction was syntax-tested with an impossible delete condition
+and changed zero rows. Thirty-nine tests passed, including the deletion guards
+and rollback/audit structure. The cleanup report is returned-visit-cleanup.csv;
+the durable deletion journal remains available across repeat runs.
+
+Production apply deleted all eight eligible billing headers and charge lines.
+Independent native history queries verified each deletion. Full before/after
+inventory, return, and D/1 stock ledger snapshots compared unchanged. The three
+screenshot examples had native deletion records earlier on October 8 and were
+not deleted again. Final repeat apply at 15:02 Eastern found zero remaining
+matching full-return visits, deleted zero visits, and changed zero reminders.
+The open queue remains 20 reminders / 13 patients. The dated local private
+report is reports/returned-visit-deletions-20261008.csv; its corresponding
+JSONL journal records the backup names and exact native billing references.
+
 ## Current scope and schedule
 
 The original one-time check covered all recorded history of the exact target
@@ -167,6 +214,7 @@ Runtime files:
 - /opt/ims_router/biologic_missing_claims.py
 - /opt/ims_router/biologic_followup.py
 - /opt/ims_router/biologic_stock_returns.py
+- /opt/ims_router/biologic_return_visit_cleanup.py
 - /opt/ims_router/run-biologic-missing-claims.sh
 - /opt/ims_router/output/biologic_missing_claims/status.json
 - /opt/ims_router/output/biologic_missing_claims/missing-current.csv
@@ -175,6 +223,7 @@ Runtime files:
 - /opt/ims_router/output/biologic_missing_claims/appointment-history.csv
 - /opt/ims_router/output/biologic_missing_claims/returned-to-stock.csv
 - /opt/ims_router/output/biologic_missing_claims/outside-window.csv
+- /opt/ims_router/output/biologic_missing_claims/returned-visit-cleanup.csv
 - /opt/ims_router/logs/biologic_missing_claims.log
 
 The existing user's crontab has exactly one new entry at 23:40 daily. Runtime

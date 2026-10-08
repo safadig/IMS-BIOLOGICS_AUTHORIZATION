@@ -9,6 +9,8 @@ project:
     and verified return-to-stock disposition. The open reminder queue covers
     nine calendar months; fully returned or out-of-window monitor reminders
     are completed with separate native audit reasons.
+    Verified full returns also remove their unclaimed zero-dollar dispense-only
+    billing visits using guarded native deletion and retained audit history.
 
 handoff:
   read_first:
@@ -69,6 +71,10 @@ main_tables_files_services:
     - prescription_dispense
     - drug_adjustment
     - item_ledger
+    - billing_header_history
+    - billing_detail_history
+    - billing_subdetail
+    - receipt_subdetail
   key_files:
     - sql/biologic_insurance_change_alerts.sql
     - sql/biologic_insurance_change_reminder_candidates.sql
@@ -80,10 +86,12 @@ main_tables_files_services:
     - scripts/biologic_missing_claims.py
     - scripts/biologic_followup.py
     - scripts/biologic_stock_returns.py
+    - scripts/biologic_return_visit_cleanup.py
     - scripts/run-biologic-missing-claims.sh
     - tests/test_biologic_missing_claims.py
     - tests/test_biologic_followup.py
     - tests/test_biologic_stock_returns.py
+    - tests/test_biologic_return_visit_cleanup.py
     - docs/biologic-missing-claims-20261008.md
 
 key_scripts_commands:

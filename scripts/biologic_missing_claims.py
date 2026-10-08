@@ -197,10 +197,14 @@ def main():
     start_date = date.fromisoformat(args.start_date) if args.start_date else cutoff
     if args.apply:
         start_date = max(start_date, cutoff)
+    out = Path(args.output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    select, execute = db_helpers()
+    from biologic_return_visit_cleanup import cleanup_return_visits
+    cleanup_summary = cleanup_return_visits(select, execute, out, args.apply)
     missing, late = evaluate(query_rows(), today, start_date)
     from biologic_followup import (query_open_reminders, query_followup, enrich,
                                    context_note, merge_note, refresh_sql)
-    select, execute = db_helpers()
     all_reminders = query_open_reminders(select, include_done=True)
     reminders = [r for r in all_reminders if r['reminder_task_state'] == 'OPEN'
                  and r['reminder_parent_status'] == 'G']
@@ -223,8 +227,6 @@ def main():
     returned_report = {e['source']: e for e in returned_events}
     returned_report.update({e['source']: e for e in all_reminders
                             if e['stock_return_status'] == 'FULLY RETURNED TO STOCK'})
-    out = Path(args.output_dir)
-    out.mkdir(parents=True, exist_ok=True)
     write_report(out / "missing-current.csv", missing)
     write_report(out / "late-claims.csv", late)
     write_report(out / "open-reminder-context.csv", reminders)
@@ -356,6 +358,7 @@ WHERE t.tran_id={int(reminder['todo_id'])} AND t.source={sql_string(reminder['so
                "context_updated_and_verified": updated, "context_skipped": skipped}
     summary['completed_returned_reminders'] = completed
     summary['completed_outside_window_reminders'] = completed_outside
+    summary.update(cleanup_summary)
     (out / "status.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary), flush=True)
 

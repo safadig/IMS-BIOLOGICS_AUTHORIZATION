@@ -34,7 +34,7 @@ def query_stock(select, patient_ids):
     codes = ','.join(q(c) for c in CODES)
     dispenses = xml_select(select, f"""
 SELECT pd.tran_id,pd.patient_id,pd.billing_id,pd.dispense_date,pd.item_id,
- pd.item_lot_no,pd.item_qty,pd.adj_qty,pd.office_id,pd.lot_no,
+ pd.item_lot_no,pd.item_qty,pd.adj_qty,pd.office_id,pd.lot_no,pd.superbill_pn_id,pd.billing_unit,
  COALESCE(om.office_code,'UNKNOWN') AS office
 FROM prescription_dispense pd LEFT JOIN office_master om ON om.srno=pd.office_id
 WHERE pd.patient_id IN ({scope}) AND pd.billing_id IN ({codes})

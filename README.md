@@ -21,6 +21,11 @@ The open queue covers the last nine calendar months; older generated reminders
 are marked Done with a separate outside-window reason. Historical records remain
 available in private reports.
 
+Verified full returns also trigger cleanup of the corresponding zero-dollar,
+unclaimed dispense-only billing visit. Visits with payments, other services,
+claims, clinical links, or attachments are preserved for review. The native
+delete cascade and history triggers remain enabled, with private full snapshots.
+
 This workspace contains a first-pass IMS audit for a biologics safety problem:
 
 When a patient is scheduled to receive Xolair, Fasenra, or Tezspire, flag cases where the patient's current primary insurance appears to have changed after the most recent drug dispense charge. Those patients need PA/no-PA verification before administration.
